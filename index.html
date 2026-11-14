@@ -529,25 +529,27 @@ async function loadFiles(files){
     const f = files[0];
     const isGif = f.type === 'image/gif' || /\.gif$/i.test(f.name);
     if (f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|mkv|avi|wmv|flv|3gp|3g2|mpg|mpeg|ts|mts|m2ts|ogv|asf|vob|mxf|dv)$/i.test(f.name)) {
-      videoFile = f; rawKind = 'video'; convertedMp4 = null;
+      videoFile = f; rawKind = 'video'; convertedMp4 = null; ffMode = false; ffSource = null;
       $('#mp4Row').classList.add('hidden');
       $('#srcInfo').textContent = 'Opening video…';
       if (!(await probeVideo())) {
         if (f.size > 1.5e9) throw new Error('this video’s format needs converting, but it’s too large to convert in the browser — trim it first');
         const info = $('#srcInfo');
-        const mp4 = await convertToMp4(f, s => { info.textContent = 'Your browser can’t read this video format, so it’s being converted to MP4. ' + s; setProgress(prog, 0); },
-                                       p => setProgress(prog, p));
+        const { blob, duration } = await convertToMp4(f,
+          s => { info.textContent = 'Your browser can’t read this video format, so it’s being converted to MP4. ' + s; setProgress(prog, 0); },
+          p => setProgress(prog, p));
         setProgress(prog, null);
-        const name = f.name.replace(/\.[^.]+$/, '') + '.mp4';
-        convertedMp4 = new File([mp4], name, { type: 'video/mp4' });
+        convertedMp4 = new File([blob], f.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' });
         videoFile = convertedMp4;
-        if (!(await probeVideo())) throw new Error('converted, but the result still won’t open in this browser');
         $('#mp4Row').classList.remove('hidden');
         toast('Converted to MP4.');
+        if (!(await probeVideo())) {
+          // The browser's player still won't cooperate: let ffmpeg pull the frames directly.
+          ffMode = true; ffSource = convertedMp4; setDuration(duration);
+        }
       }
       $('#videoOpts').classList.remove('hidden');
       await extractVideo();
-      if (convertedMp4) $('#srcInfo').textContent = '(Converted to MP4) ' + $('#srcInfo').textContent;
       return;
     }
     if (isGif) {
@@ -615,28 +617,38 @@ $('#gResample').onchange = () => { $('#gResampleBox').classList.toggle('hidden',
 /* video */
 let videoEl = null, videoDur = 0;
 function once(el, ev, ms=15000){ return new Promise((res, rej) => { const to = setTimeout(()=>{cleanup(); rej(new Error('Timed out waiting for video ('+ev+')'));}, ms); const h=()=>{cleanup(); res();}; const err=()=>{cleanup(); rej(new Error('This browser can’t play this video format'));}; const cleanup=()=>{clearTimeout(to); el.removeEventListener(ev,h); el.removeEventListener('error',err);}; el.addEventListener(ev,h); el.addEventListener('error',err); }); }
-// Returns true if this browser can decode the video and seek it; false if it needs converting.
+let ffMode = false, ffSource = null;   // ffMode: frames come straight from ffmpeg, no <video> needed
+function setDuration(d){
+  videoDur = d || 0;
+  $('#vEnd').placeholder = videoDur.toFixed(1);
+  $('#vEnd').value = Math.min(videoDur, 4).toFixed(1);
+  updateEstimate();
+}
+// Returns true if this browser can decode and seek the video; false if it needs help.
 async function probeVideo(){
   if (videoEl) { URL.revokeObjectURL(videoEl.src); videoEl.remove(); }
   videoEl = document.createElement('video');
-  videoEl.muted = true; videoEl.playsInline = true; videoEl.setAttribute('playsinline',''); videoEl.preload = 'auto';
-  videoEl.style.cssText = 'position:fixed;left:-9999px;width:2px;height:2px;opacity:0';
+  videoEl.muted = true; videoEl.defaultMuted = true; videoEl.playsInline = true;
+  videoEl.setAttribute('playsinline',''); videoEl.setAttribute('muted',''); videoEl.preload = 'auto';
+  // Kept on-screen (but invisible): iOS won't decode frames for videos it thinks are hidden.
+  videoEl.style.cssText = 'position:fixed;left:0;top:0;width:4px;height:4px;opacity:0.01;pointer-events:none;z-index:-1';
   document.body.appendChild(videoEl);
   videoEl.src = URL.createObjectURL(videoFile);
+  videoEl.load();
+  // iPhone Safari won't load any video data until something asks it to play.
+  try { const k = videoEl.play(); if (k && k.then) k.then(() => videoEl.pause()).catch(() => {}); } catch(e) {}
   try { await once(videoEl, 'loadedmetadata', 12000); } catch(e) { return false; }
-  if (!videoEl.videoWidth || !videoEl.videoHeight) return false;      // audio decodes, picture doesn't
   if (videoEl.readyState < 2) { try { await once(videoEl, 'loadeddata', 8000); } catch(e){ if (videoEl.error) return false; } }
-  try { videoEl.currentTime = 0.001; await once(videoEl, 'seeked', 10000); } catch(e) { return false; }
+  videoEl.pause();
+  if (!videoEl.videoWidth || !videoEl.videoHeight) return false;      // audio decodes, picture doesn't
   if (!isFinite(videoEl.duration) || videoEl.duration <= 0) return false; // e.g. unseekable WebM recordings
-  videoDur = videoEl.duration || 0;
-  $('#vEnd').placeholder = videoDur.toFixed(1);
-  const sugEnd = Math.min(videoDur, 4);
-  $('#vEnd').value = sugEnd.toFixed(1);
-  updateEstimate();
+  try { videoEl.currentTime = 0.001; await once(videoEl, 'seeked', 8000); }
+  catch(e) { if (videoEl.error) return false; /* slow phone: let extraction try */ }
+  setDuration(videoEl.duration);
   return true;
 }
 
-/* ---------- automatic MP4 conversion (ffmpeg.wasm, loaded only when needed) ---------- */
+/* ---------- ffmpeg.wasm (loaded only when needed) ---------- */
 let ffAssets = null, convertedMp4 = null;
 const WORKER_SRC = `
 self.onmessage = async ({ data: m }) => {
@@ -645,14 +657,16 @@ self.onmessage = async ({ data: m }) => {
     const core = await self.createFFmpegCore({
       mainScriptUrlOrBlob: m.coreURL + '#' + btoa(JSON.stringify({ wasmURL: m.wasmURL, workerURL: '' }))
     });
-    core.setProgress(d => self.postMessage({ type: 'progress', progress: d.progress, time: d.time }));
-    core.setLogger(d => self.postMessage({ type: 'log', message: d.message }));
+    const log = [];
+    core.setLogger(d => { log.push(d.message); if (log.length > 300) log.shift(); });
+    core.setProgress(d => self.postMessage({ type: 'progress', progress: d.progress }));
     core.FS.writeFile(m.inName, new Uint8Array(m.data));
-    core.exec('-i', m.inName, ...m.args, 'out.mp4');
+    core.exec(...m.args);
     const ret = core.ret; core.reset();
-    if (ret !== 0) throw new Error('ffmpeg exited with code ' + ret);
-    const out = core.FS.readFile('out.mp4');
-    self.postMessage({ type: 'done', data: out }, [out.buffer]);
+    const names = core.FS.readdir('/').filter(n => n.startsWith(m.outPrefix)).sort();
+    if (!names.length) throw new Error('ffmpeg produced nothing (code ' + ret + '): ' + log.slice(-3).join(' | '));
+    const files = names.map(n => ({ name: n, data: core.FS.readFile(n) }));
+    self.postMessage({ type: 'done', files, log: log.join('\\n') }, files.map(f => f.data.buffer));
   } catch (e) { self.postMessage({ type: 'error', message: String(e && e.message || e) }); }
 };`;
 async function loadFfAssets(onStatus){
@@ -668,28 +682,57 @@ async function loadFfAssets(onStatus){
   };
   return ffAssets;
 }
-async function convertToMp4(file, onStatus, onProgress){
+const fileExt = f => ((f.name || '').match(/\.([a-z0-9]{1,5})$/i) || [,'video'])[1].toLowerCase();
+async function runFF(file, args, outPrefix, onStatus, onProgress){
   const a = await loadFfAssets(onStatus);
   const data = await file.arrayBuffer();
-  const ext = (file.name.match(/\.([a-z0-9]{1,5})$/i) || [,'video'])[1].toLowerCase();
-  onStatus('Converting to MP4…');
+  const inName = 'in.' + fileExt(file);
   return new Promise((resolve, reject) => {
     const w = new Worker(a.workerURL);
-    let lastLog = '';
     w.onmessage = ({ data: m }) => {
-      if (m.type === 'progress') { const p = m.progress; if (p >= 0 && p <= 1) onProgress(p); }
-      else if (m.type === 'log') { lastLog = m.message; }
-      else if (m.type === 'done') { w.terminate(); resolve(new Blob([m.data], { type: 'video/mp4' })); }
-      else if (m.type === 'error') { w.terminate(); reject(new Error(m.message + (lastLog ? ' — ' + lastLog : ''))); }
+      if (m.type === 'progress') { if (m.progress >= 0 && m.progress <= 1) onProgress(m.progress); }
+      else if (m.type === 'done') { w.terminate(); resolve(m); }
+      else if (m.type === 'error') { w.terminate(); reject(new Error(m.message)); }
     };
     w.onerror = e => { w.terminate(); reject(new Error(e.message || 'converter failed to start')); };
-    w.postMessage({
-      coreURL: a.coreURL, wasmURL: a.wasmURL, data, inName: 'in.' + ext,
-      // Picture only, scaled to at most 1280 px wide (plenty for 2–3 inch slips), fast H.264 that every browser plays.
-      args: ['-an', '-vf', "scale='min(1280,iw)':-2", '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
-             '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
-    }, [data]);
+    w.postMessage({ coreURL: a.coreURL, wasmURL: a.wasmURL, data, inName,
+      args: args.map(x => x === '$IN' ? inName : String(x)), outPrefix }, [data]);
   });
+}
+function parseDuration(log){
+  const m = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(log || '');
+  return m ? (+m[1])*3600 + (+m[2])*60 + (+m[3]) : 0;
+}
+async function convertToMp4(file, onStatus, onProgress){
+  onStatus('Converting to MP4…');
+  // Picture only, at most 1280 px wide (plenty for 2–3 inch slips), H.264 baseline-friendly settings every browser plays.
+  const r = await runFF(file, ['-i', '$IN', '-an', '-vf', "scale='min(1280,iw)':-2", '-c:v', 'libx264', '-preset', 'ultrafast',
+    '-profile:v', 'baseline', '-level', '4.0', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'out.mp4'],
+    'out.mp4', s => onStatus(s), onProgress);
+  return { blob: new Blob([r.files[0].data], { type: 'video/mp4' }), duration: parseDuration(r.log) };
+}
+async function extractFF(){
+  const btn = $('#vExtract'); btn.disabled = true;
+  const prog = $('#prog'), info = $('#srcInfo');
+  const st = Math.max(0, +$('#vStart').value || 0);
+  const en = Math.min(videoDur || 1e9, +$('#vEnd').value || videoDur || 1e9);
+  const fps = clampNum($('#vFps').value, 2, 30, 12);
+  try {
+    info.textContent = 'Pulling frames with the converter…'; setProgress(prog, 0);
+    const r = await runFF(ffSource, ['-ss', st.toFixed(3), '-t', Math.max(0.1, en - st).toFixed(3), '-i', '$IN', '-an',
+      '-vf', `fps=${fps},scale='min(1100,iw)':-2`, '-c:v', 'png', 'f%05d.png'], 'f', s => info.textContent = s, p => setProgress(prog, p*0.5));
+    const out = [];
+    for (let i = 0; i < r.files.length; i++) {
+      setProgress(prog, 0.5 + 0.5*i/r.files.length);
+      const bmp = await createImageBitmap(new Blob([r.files[i].data], { type: 'image/png' }));
+      out.push(await storeFrame(bmp, bmp.width, bmp.height, i/fps)); bmp.close && bmp.close();
+    }
+    raw = out; rawKind = 'video';
+    afterLoad(`${convertedMp4 ? '(Converted to MP4) ' : ''}Video · ${out.length} frames at ${fps}/s (${st.toFixed(1)}–${en.toFixed(1)} s)`);
+  } catch(e) {
+    info.textContent = 'Couldn’t pull frames from this video: ' + e.message;
+  }
+  setProgress(prog, null); btn.disabled = false;
 }
 $('#saveMp4').onclick = async () => { if (convertedMp4) await saveFile(convertedMp4.name, convertedMp4); };
 function updateEstimate(){
@@ -700,6 +743,7 @@ function updateEstimate(){
 ['#vStart','#vEnd','#vFps'].forEach(s => $(s).oninput = updateEstimate);
 $('#vExtract').onclick = () => extractVideo();
 async function extractVideo(){
+  if (ffMode) return extractFF();
   if (!videoEl) return;
   const btn = $('#vExtract'); btn.disabled = true;
   const prog = $('#prog');
@@ -719,9 +763,12 @@ async function extractVideo(){
       out.push(await storeFrame(cv, W, H, times[i]-st));
     }
     raw = out; rawKind = 'video';
-    afterLoad(`Video · ${out.length} frames at ${fps}/s (${st.toFixed(1)}–${en.toFixed(1)} s)`);
+    afterLoad(`${convertedMp4 ? '(Converted to MP4) ' : ''}Video · ${out.length} frames at ${fps}/s (${st.toFixed(1)}–${en.toFixed(1)} s)`);
   } catch(e) {
-    $('#srcInfo').textContent = 'Couldn’t pull frames from this video: ' + e.message + '. Try a different format (MP4 is safest).';
+    // The browser's player stalled or failed mid-way: fall back to ffmpeg, which reads any format directly.
+    setProgress(prog, null); btn.disabled = false;
+    ffMode = true; ffSource = videoFile;
+    return extractFF();
   }
   setProgress(prog, null); btn.disabled = false;
 }
