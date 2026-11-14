@@ -95,12 +95,15 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
     <h2>Your animation</h2>
     <div class="drop" id="drop">
       <strong>Choose a file</strong>
-      <span class="muted">GIF, MP4/MOV/WebM video, animated WebP/PNG, or several images (frames in filename order)</span>
+      <span class="muted">GIF, any video (MP4, MOV, WebM, AVI, MKV… — unsupported formats are converted to MP4 automatically), animated WebP/PNG, or several images (frames in filename order)</span>
     </div>
-    <input type="file" id="file" accept="image/*,video/*,.gif" multiple class="hidden">
+    <input type="file" id="file" accept="image/*,video/*,.gif,.mkv,.avi,.wmv,.flv,.3gp,.mpg,.mpeg,.ts,.mts,.m2ts,.ogv,.vob,.mxf" multiple class="hidden">
     <div class="progress" id="prog"><div></div></div>
     <div id="srcInfo" class="muted" style="margin-top:8px">No animation loaded yet.</div>
     <div class="thumbs" id="thumbs"></div>
+    <div id="mp4Row" class="hidden" style="margin-top:6px">
+      <button class="btn sec" id="saveMp4">Save the converted MP4</button>
+    </div>
 
     <div id="videoOpts" class="hidden">
       <h3>Pull frames from the video</h3>
@@ -525,11 +528,26 @@ async function loadFiles(files){
     }
     const f = files[0];
     const isGif = f.type === 'image/gif' || /\.gif$/i.test(f.name);
-    if (f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(f.name)) {
-      videoFile = f; rawKind = 'video';
+    if (f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|mkv|avi|wmv|flv|3gp|3g2|mpg|mpeg|ts|mts|m2ts|ogv|asf|vob|mxf|dv)$/i.test(f.name)) {
+      videoFile = f; rawKind = 'video'; convertedMp4 = null;
+      $('#mp4Row').classList.add('hidden');
+      $('#srcInfo').textContent = 'Opening video…';
+      if (!(await probeVideo())) {
+        if (f.size > 1.5e9) throw new Error('this video’s format needs converting, but it’s too large to convert in the browser — trim it first');
+        const info = $('#srcInfo');
+        const mp4 = await convertToMp4(f, s => { info.textContent = 'Your browser can’t read this video format, so it’s being converted to MP4. ' + s; setProgress(prog, 0); },
+                                       p => setProgress(prog, p));
+        setProgress(prog, null);
+        const name = f.name.replace(/\.[^.]+$/, '') + '.mp4';
+        convertedMp4 = new File([mp4], name, { type: 'video/mp4' });
+        videoFile = convertedMp4;
+        if (!(await probeVideo())) throw new Error('converted, but the result still won’t open in this browser');
+        $('#mp4Row').classList.remove('hidden');
+        toast('Converted to MP4.');
+      }
       $('#videoOpts').classList.remove('hidden');
-      await probeVideo();
       await extractVideo();
+      if (convertedMp4) $('#srcInfo').textContent = '(Converted to MP4) ' + $('#srcInfo').textContent;
       return;
     }
     if (isGif) {
@@ -596,7 +614,8 @@ $('#gResample').onchange = () => { $('#gResampleBox').classList.toggle('hidden',
 
 /* video */
 let videoEl = null, videoDur = 0;
-function once(el, ev, ms=15000){ return new Promise((res, rej) => { const to = setTimeout(()=>{cleanup(); rej(new Error('Timed out waiting for video ('+ev+')'));}, ms); const h=()=>{cleanup(); res();}; const cleanup=()=>{clearTimeout(to); el.removeEventListener(ev,h);}; el.addEventListener(ev,h); }); }
+function once(el, ev, ms=15000){ return new Promise((res, rej) => { const to = setTimeout(()=>{cleanup(); rej(new Error('Timed out waiting for video ('+ev+')'));}, ms); const h=()=>{cleanup(); res();}; const err=()=>{cleanup(); rej(new Error('This browser can’t play this video format'));}; const cleanup=()=>{clearTimeout(to); el.removeEventListener(ev,h); el.removeEventListener('error',err);}; el.addEventListener(ev,h); el.addEventListener('error',err); }); }
+// Returns true if this browser can decode the video and seek it; false if it needs converting.
 async function probeVideo(){
   if (videoEl) { URL.revokeObjectURL(videoEl.src); videoEl.remove(); }
   videoEl = document.createElement('video');
@@ -604,14 +623,75 @@ async function probeVideo(){
   videoEl.style.cssText = 'position:fixed;left:-9999px;width:2px;height:2px;opacity:0';
   document.body.appendChild(videoEl);
   videoEl.src = URL.createObjectURL(videoFile);
-  await once(videoEl, 'loadedmetadata');
-  if (videoEl.readyState < 2) { try { await once(videoEl, 'loadeddata', 8000); } catch(e){} }
+  try { await once(videoEl, 'loadedmetadata', 12000); } catch(e) { return false; }
+  if (!videoEl.videoWidth || !videoEl.videoHeight) return false;      // audio decodes, picture doesn't
+  if (videoEl.readyState < 2) { try { await once(videoEl, 'loadeddata', 8000); } catch(e){ if (videoEl.error) return false; } }
+  try { videoEl.currentTime = 0.001; await once(videoEl, 'seeked', 10000); } catch(e) { return false; }
+  if (!isFinite(videoEl.duration) || videoEl.duration <= 0) return false; // e.g. unseekable WebM recordings
   videoDur = videoEl.duration || 0;
   $('#vEnd').placeholder = videoDur.toFixed(1);
   const sugEnd = Math.min(videoDur, 4);
   $('#vEnd').value = sugEnd.toFixed(1);
   updateEstimate();
+  return true;
 }
+
+/* ---------- automatic MP4 conversion (ffmpeg.wasm, loaded only when needed) ---------- */
+let ffAssets = null, convertedMp4 = null;
+const WORKER_SRC = `
+self.onmessage = async ({ data: m }) => {
+  try {
+    importScripts(m.coreURL);
+    const core = await self.createFFmpegCore({
+      mainScriptUrlOrBlob: m.coreURL + '#' + btoa(JSON.stringify({ wasmURL: m.wasmURL, workerURL: '' }))
+    });
+    core.setProgress(d => self.postMessage({ type: 'progress', progress: d.progress, time: d.time }));
+    core.setLogger(d => self.postMessage({ type: 'log', message: d.message }));
+    core.FS.writeFile(m.inName, new Uint8Array(m.data));
+    core.exec('-i', m.inName, ...m.args, 'out.mp4');
+    const ret = core.ret; core.reset();
+    if (ret !== 0) throw new Error('ffmpeg exited with code ' + ret);
+    const out = core.FS.readFile('out.mp4');
+    self.postMessage({ type: 'done', data: out }, [out.buffer]);
+  } catch (e) { self.postMessage({ type: 'error', message: String(e && e.message || e) }); }
+};`;
+async function loadFfAssets(onStatus){
+  if (ffAssets) return ffAssets;
+  onStatus('Loading the video converter (≈32 MB, first time only)…');
+  const base = new URL('ffmpeg/', location.href).href;
+  const get = async name => { const r = await fetch(base + name); if (!r.ok) throw new Error('couldn’t load ' + name); return r.blob(); };
+  const [js, w0, w1] = await Promise.all([get('ffmpeg-core.js'), get('core-0.wasm'), get('core-1.wasm')]);
+  ffAssets = {
+    coreURL: URL.createObjectURL(new Blob([js], { type: 'text/javascript' })),
+    wasmURL: URL.createObjectURL(new Blob([w0, w1], { type: 'application/wasm' })),
+    workerURL: URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }))
+  };
+  return ffAssets;
+}
+async function convertToMp4(file, onStatus, onProgress){
+  const a = await loadFfAssets(onStatus);
+  const data = await file.arrayBuffer();
+  const ext = (file.name.match(/\.([a-z0-9]{1,5})$/i) || [,'video'])[1].toLowerCase();
+  onStatus('Converting to MP4…');
+  return new Promise((resolve, reject) => {
+    const w = new Worker(a.workerURL);
+    let lastLog = '';
+    w.onmessage = ({ data: m }) => {
+      if (m.type === 'progress') { const p = m.progress; if (p >= 0 && p <= 1) onProgress(p); }
+      else if (m.type === 'log') { lastLog = m.message; }
+      else if (m.type === 'done') { w.terminate(); resolve(new Blob([m.data], { type: 'video/mp4' })); }
+      else if (m.type === 'error') { w.terminate(); reject(new Error(m.message + (lastLog ? ' — ' + lastLog : ''))); }
+    };
+    w.onerror = e => { w.terminate(); reject(new Error(e.message || 'converter failed to start')); };
+    w.postMessage({
+      coreURL: a.coreURL, wasmURL: a.wasmURL, data, inName: 'in.' + ext,
+      // Picture only, scaled to at most 1280 px wide (plenty for 2–3 inch slips), fast H.264 that every browser plays.
+      args: ['-an', '-vf', "scale='min(1280,iw)':-2", '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+             '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
+    }, [data]);
+  });
+}
+$('#saveMp4').onclick = async () => { if (convertedMp4) await saveFile(convertedMp4.name, convertedMp4); };
 function updateEstimate(){
   const st = +$('#vStart').value||0, en = Math.min(videoDur, +$('#vEnd').value || videoDur), fps = clampNum($('#vFps').value,2,30,12);
   const n = Math.max(0, Math.ceil((en-st)*fps));

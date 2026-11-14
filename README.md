@@ -6,13 +6,19 @@ Everything runs in the browser in a single file (`index.html`) — no build step
 
 ## What it does
 
-- **Input:** GIF, MP4/MOV/WebM video, animated WebP/PNG (in browsers with `ImageDecoder`), or several images at once (ordered by filename).
+- **Input:** GIF, any video (MP4, MOV, WebM, AVI, MKV, WMV, FLV…), animated WebP/PNG (in browsers with `ImageDecoder`), or several images at once (ordered by filename).
 - **Layout:** numbered slips laid out edge to edge on US Letter or A4, with the picture on the **left or right** and a shaded binding strip with the frame number on the opposite side.
 - **Slip sizes:** Pocket 3×2 in, Card 3½×2 in, Wide 4×2½ in, Index 5×3 in, or custom.
 - **Sequence options:** video trim and frames per second, GIF resampling, repeat loops, held first/last frames, reverse, title cover slip, blank back card.
 - **Print look:** black & white, contrast, brightness, cut lines.
 - **Output:** a print-ready PDF (via jsPDF) or one PNG per sheet. Print at 100% / "Actual size".
 - **Flip preview:** plays the slips in the page at an adjustable speed.
+
+## Automatic MP4 conversion
+
+If the browser can't decode a video (AVI, WMV, FLV, HEVC on some browsers, etc.), the page converts it to H.264 MP4 in the browser with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) and then extracts frames as usual. Nothing is uploaded. The converted MP4 can be saved.
+
+The ffmpeg core lives in `ffmpeg/`: `ffmpeg-core.js` plus the 32 MB `ffmpeg-core.wasm` split into `core-0.wasm` and `core-1.wasm` (to stay under per-file hosting limits); the page rejoins them. They're only downloaded when a video needs converting. Because the page fetches these files, serve the folder over HTTP rather than opening `index.html` from disk if you need conversion.
 
 ## Animate with AI
 
