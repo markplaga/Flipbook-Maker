@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flipbook Maker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --paper:#faf7f1; --card:#ffffff; --ink:#2b2622; --muted:#7a7068; --line:#e6dfd4;
+  --accent:#b8492a; --accent-ink:#fff; --soft:#f3ede3; --ok:#3f7a4f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;font-weight:600;line-height:1.2;margin:0 0 .4em}
+h1{font-size:1.7rem}
+h2{font-size:1.25rem;margin-top:.2em}
+h3{font-size:1.05rem;margin-top:1em}
+p{margin:.4em 0 .8em}
+a{color:var(--accent)}
+header{padding:20px 18px 6px;max-width:1100px;margin:0 auto}
+header p{color:var(--muted);margin:0}
+nav{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line)}
+nav .in{max-width:1100px;margin:0 auto;display:flex;gap:4px;padding:8px 12px;overflow-x:auto}
+nav button{flex:none;border:0;background:none;padding:8px 14px;border-radius:999px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}
+nav button.on{background:var(--ink);color:#fff}
+main{max-width:1100px;margin:0 auto;padding:14px 12px 60px}
+.tab{display:none}.tab.on{display:block}
+.grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:.85rem;font-weight:600;color:var(--muted);margin:10px 0 4px}
+input[type=text],input[type=number],select,textarea{width:100%;font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+textarea{min-height:80px;resize:vertical}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:700;cursor:pointer;background:var(--accent);color:var(--accent-ink)}
+.btn.sec{background:var(--soft);color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.wide{width:100%}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;border:0;background:#fff;padding:9px 6px;font:inherit;font-size:.92rem;cursor:pointer;color:var(--ink)}
+.seg button.on{background:var(--ink);color:#fff}
+.check{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink);font-size:.95rem;margin:8px 0}
+.check input{width:18px;height:18px}
+.drop{border:2px dashed #d5c9b8;border-radius:14px;padding:22px 14px;text-align:center;background:var(--soft);cursor:pointer}
+.drop.hover{border-color:var(--accent)}
+.drop strong{display:block;font-size:1.05rem}
+.muted{color:var(--muted);font-size:.9rem}
+.stat{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.pill{background:var(--soft);border-radius:999px;padding:3px 10px;font-size:.85rem}
+.pill.warn{background:#fbe6d8;color:#8a3412}
+.progress{height:6px;background:var(--soft);border-radius:4px;overflow:hidden;margin:8px 0;display:none}
+.progress div{height:100%;width:0;background:var(--accent);transition:width .15s}
+#pages canvas{width:100%;height:auto;display:block;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.12);margin:0 auto 14px;border-radius:2px}
+.pageLabel{font-size:.8rem;color:var(--muted);margin:-8px 0 14px;text-align:center}
+.flipwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+#flipCanvas{max-width:100%;border:1px solid var(--line);border-radius:6px;background:#fff}
+details{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+summary{cursor:pointer;font-weight:700;padding:4px 0}
+.code{position:relative;margin:8px 0 14px}
+.code pre{margin:0;background:#2b2622;color:#f6efe4;border-radius:10px;padding:14px 14px 14px;white-space:pre-wrap;word-break:break-word;font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:340px;overflow:auto}
+.code .copy{position:absolute;top:8px;right:8px;border:0;border-radius:7px;padding:5px 10px;font:600 12px/1 -apple-system,sans-serif;background:#f6efe4;color:#2b2622;cursor:pointer}
+.code .tag{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+ul.tips{padding-left:1.1em;margin:.3em 0}
+ul.tips li{margin:.35em 0}
+ol.steps{padding-left:1.2em}
+ol.steps li{margin:.5em 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+.note{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:.92rem}
+.hidden{display:none!important}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:999px;font-size:.92rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw;text-align:center}
+#toast.on{opacity:1}
+.thumbs{display:flex;gap:4px;overflow-x:auto;padding:4px 0}
+.thumbs canvas{height:48px;width:auto;border:1px solid var(--line);border-radius:3px;flex:none;background:#fff}
+</style>
+</head>
+<body>
+<header>
+  <h1>Flipbook Maker</h1>
+  <p>Turn a GIF, video, or image sequence into numbered, printable flipbook slips.</p>
+</header>
+<nav><div class="in">
+  <button data-tab="make" class="on">1 · Make</button>
+  <button data-tab="ai">2 · Animate with AI</button>
+  <button data-tab="build">3 · Cut &amp; bind</button>
+</div></nav>
+
+<main>
+<!-- ============ MAKE ============ -->
+<section class="tab on" id="tab-make">
+<div class="grid">
+<div>
+  <div class="card">
+    <h2>Your animation</h2>
+    <div class="drop" id="drop">
+      <strong>Choose a file</strong>
+      <span class="muted">GIF, MP4/MOV/WebM video, animated WebP/PNG, or several images (frames in filename order)</span>
+    </div>
+    <input type="file" id="file" accept="image/*,video/*,.gif" multiple class="hidden">
+    <div class="progress" id="prog"><div></div></div>
+    <div id="srcInfo" class="muted" style="margin-top:8px">No animation loaded yet.</div>
+    <div class="thumbs" id="thumbs"></div>
+
+    <div id="videoOpts" class="hidden">
+      <h3>Pull frames from the video</h3>
+      <div class="row">
+        <div><label>Start (sec)</label><input type="number" id="vStart" value="0" min="0" step="0.1"></div>
+        <div><label>End (sec)</label><input type="number" id="vEnd" value="" min="0" step="0.1" placeholder="end"></div>
+        <div><label>Frames/sec</label><input type="number" id="vFps" value="12" min="2" max="30" step="1"></div>
+      </div>
+      <p class="muted" id="vEstimate"></p>
+      <button class="btn wide" id="vExtract">Extract frames</button>
+    </div>
+
+    <div id="gifOpts" class="hidden">
+      <label class="check"><input type="checkbox" id="gResample"> Resample to a set speed (thin out long or fast GIFs)</label>
+      <div id="gResampleBox" class="row hidden">
+        <div><label>Frames/sec</label><input type="number" id="gFps" value="12" min="2" max="30"></div>
+        <div><label>Start (sec)</label><input type="number" id="gStart" value="0" min="0" step="0.1"></div>
+        <div><label>End (sec)</label><input type="number" id="gEnd" min="0" step="0.1" placeholder="end"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Layout</h2>
+    <label>Picture side</label>
+    <div class="seg" id="sideSeg">
+      <button data-v="right" class="on">Picture right</button>
+      <button data-v="left">Picture left</button>
+    </div>
+    <p class="muted" id="sideHelp"></p>
+
+    <div class="row">
+      <div><label>Paper</label>
+        <select id="paper"><option value="letter">US Letter</option><option value="a4">A4</option></select></div>
+      <div><label>Slip size</label>
+        <select id="slipPreset">
+          <option value="3x2">Pocket 3 × 2 in</option>
+          <option value="3.5x2" selected>Card 3½ × 2 in</option>
+          <option value="4x2.5">Wide 4 × 2½ in</option>
+          <option value="5x3">Index 5 × 3 in</option>
+          <option value="custom">Custom…</option>
+        </select></div>
+    </div>
+    <div class="row" id="customBox">
+      <div><label>Slip width (in)</label><input type="number" id="slipW" value="3.5" step="0.05" min="1.5" max="7"></div>
+      <div><label>Slip height (in)</label><input type="number" id="slipH" value="2" step="0.05" min="1" max="5"></div>
+      <div><label>Binding strip (in)</label><input type="number" id="bindW" value="0.9" step="0.05" min="0.4" max="2"></div>
+    </div>
+
+    <label>Fit picture</label>
+    <div class="seg" id="fitSeg">
+      <button data-v="contain" class="on">Whole frame</button>
+      <button data-v="cover">Fill (crop edges)</button>
+    </div>
+
+    <h3>Sequence</h3>
+    <div class="row">
+      <div><label>Repeat loop</label><input type="number" id="loops" value="1" min="1" max="10"></div>
+      <div><label>Hold first frame</label><input type="number" id="holdStart" value="3" min="0" max="20"></div>
+      <div><label>Hold last frame</label><input type="number" id="holdEnd" value="3" min="0" max="20"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="reverse"> Play backwards</label>
+    <label class="check"><input type="checkbox" id="cover" checked> Add a title cover slip</label>
+    <label class="check"><input type="checkbox" id="back" checked> Add a blank back card</label>
+    <label>Title (prints on cover and binding strips)</label>
+    <input type="text" id="title" placeholder="e.g. The Leaping Fox">
+
+    <h3>Print look</h3>
+    <label class="check"><input type="checkbox" id="gray"> Black &amp; white</label>
+    <div class="row">
+      <div><label>Contrast</label><input type="range" id="contrast" min="-50" max="80" value="0" style="width:100%"></div>
+      <div><label>Brightness</label><input type="range" id="bright" min="-50" max="50" value="0" style="width:100%"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="cutLines" checked> Cut lines</label>
+    <label class="check"><input type="checkbox" id="tint" checked> Shade the binding strip</label>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <div class="stat" id="stats"></div>
+    <div class="row" style="flex-wrap:wrap">
+      <button class="btn" id="pdfBtn" disabled>Download PDF</button>
+      <button class="btn sec" id="pngBtn" disabled>Download page images</button>
+    </div>
+    <div class="progress" id="pdfProg"><div></div></div>
+    <p class="muted" style="margin-bottom:0">Print at 100% / “Actual size” — not “Fit to page” — so slips come out the right size.</p>
+  </div>
+
+  <div class="card">
+    <h2>Flip preview</h2>
+    <div class="flipwrap">
+      <canvas id="flipCanvas" width="420" height="240"></canvas>
+      <div class="row" style="width:100%;max-width:420px">
+        <button class="btn sec" id="playBtn">Play</button>
+        <div><input type="range" id="playFps" min="4" max="24" value="12" style="width:100%"><div class="muted" id="playFpsLbl" style="text-align:center">12 slips/sec</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Print sheets</h2>
+    <div id="pages"><p class="muted">Load an animation to see your sheets.</p></div>
+  </div>
+</div>
+</div>
+</section>
+
+<!-- ============ AI ============ -->
+<section class="tab" id="tab-ai">
+<div class="grid">
+<div>
+  <div class="card">
+    <h2>What makes a good flipbook clip</h2>
+    <p>A flipbook is tiny, held in a hand, and seen for a second or two. AI video tools love sweeping cameras and busy detail — both fight you here. Ask for:</p>
+    <ul class="tips">
+      <li><b>A locked camera.</b> No pans, zooms, or cuts. If the camera moves, the whole picture shifts on every page and the motion turns to mush. Video models tend to add motion to everything unless told otherwise, so say it outright.</li>
+      <li><b>One subject, one action.</b> A short clip has room for one beat. Two or three things happening at once read as noise on a 2-inch slip.</li>
+      <li><b>Think in three beats:</b> starting pose → the change → the ending pose. It keeps the model from scattering the motion.</li>
+      <li><b>Plain, still background and strong contrast.</b> Bold shapes and thick lines survive printing and small sizes; fine texture, small text, and flickering light don't.</li>
+      <li><b>Side view, centered, fully in frame.</b> Sideways motion (running, jumping, bouncing) reads best. Keep the subject from leaving the edge.</li>
+      <li><b>2–4 seconds.</b> At 12 frames a second that's 24–48 slips — a book that's satisfying and still easy to bind.</li>
+      <li><b>Match your slip shape.</b> Landscape (3:2 or 16:9) suits the slip layouts here.</li>
+      <li><b>Loops:</b> asking for “end matches start” helps, but it isn't a promise — check the first and last frames and trim if they jump.</li>
+      <li><b>Iterate one change at a time.</b> Look at the first result, find the worst problem, fix only that instruction.</li>
+    </ul>
+    <div class="note">Easiest path for crisp results: ask an AI to <b>draw</b> the animation as code (the “Draw it with Claude” box). You get clean lines, an exact loop, and perfect frame control — no video tool needed.</div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>Prompt builder</h2>
+    <label>Where will you make it?</label>
+    <select id="pTool">
+      <option value="t2v">Text-to-video (Sora, Veo, Runway, Kling, Luma…)</option>
+      <option value="i2v">Still image → video (make a picture, then animate it)</option>
+      <option value="code">Any chat AI writes the animation as code</option>
+    </select>
+    <label>Subject</label><input type="text" id="pSubject" value="a red fox">
+    <label>Action</label><input type="text" id="pAction" value="leaps over a log from left to right">
+    <div class="row">
+      <div><label>Style</label>
+      <select id="pStyle">
+        <option>bold black ink line drawing</option>
+        <option>flat cartoon with thick outlines</option>
+        <option>pencil sketch, hand-drawn animation</option>
+        <option>solid black silhouette</option>
+        <option>claymation / stop-motion</option>
+        <option>watercolor wash with clear outlines</option>
+        <option>live-action photograph</option>
+      </select></div>
+      <div><label>Background</label><input type="text" id="pBg" value="plain white"></div>
+    </div>
+    <div class="row">
+      <div><label>Length (sec)</label><input type="number" id="pDur" value="3" min="1" max="10"></div>
+      <div><label>Shape</label><select id="pAspect"><option>3:2</option><option>16:9</option><option>4:3</option><option>1:1</option></select></div>
+    </div>
+    <label class="check"><input type="checkbox" id="pLoop" checked> Seamless loop</label>
+    <details>
+      <summary>Optional: spell out the three beats</summary>
+      <label>Start</label><input type="text" id="pB1" placeholder="fox crouches at the left edge">
+      <label>Change</label><input type="text" id="pB2" placeholder="fox springs up in an arc over the log">
+      <label>End</label><input type="text" id="pB3" placeholder="fox lands lightly at the right">
+    </details>
+    <div id="promptOut" style="margin-top:12px"></div>
+    <button class="btn sec wide hidden" id="improveBtn">Ask Claude to tailor this prompt</button>
+    <div id="improveOut"></div>
+  </div>
+
+  <div class="card">
+    <h2>Draw it with Claude</h2>
+    <p class="muted">Describe a short looping animation. Claude writes a drawing function, and this page renders every frame straight into your flipbook.</p>
+    <textarea id="dDesc">A bouncing ball that squashes when it hits the ground and stretches as it rises, drawn in bold black lines on white, with a small shadow.</textarea>
+    <div class="row">
+      <div><label>Frames</label><input type="number" id="dFrames" value="24" min="6" max="120"></div>
+      <div><label>Style</label><select id="dStyle"><option value="bold black line art on white">Line art</option><option value="flat colors with thick black outlines">Cartoon color</option><option value="solid black silhouettes on white">Silhouette</option></select></div>
+    </div>
+    <button class="btn wide" id="drawBtn" style="margin-top:10px">Have Claude animate it</button>
+    <div id="drawStatus" class="muted" style="margin-top:8px"></div>
+    <details>
+      <summary>Use another AI instead (copy &amp; paste)</summary>
+      <p class="muted">Copy this prompt into ChatGPT, Gemini, Claude, etc. Paste the code it gives back below.</p>
+      <div id="codePromptOut"></div>
+      <label>Paste the code here</label>
+      <textarea id="pasteCode" placeholder="function body or full draw(ctx, t, w, h) function"></textarea>
+      <button class="btn sec wide" id="renderPasted" style="margin-top:8px">Render these frames</button>
+    </details>
+    <div id="drawCodeOut"></div>
+  </div>
+</div>
+</div>
+</section>
+
+<!-- ============ BUILD ============ -->
+<section class="tab" id="tab-build">
+<div class="grid">
+<div>
+  <div class="card">
+    <h2>Before you print</h2>
+    <ul class="tips">
+      <li><b>Paper:</b> thin copy paper bends and sticks together. Use heavy paper or light cardstock — stiff enough to spring back, not so stiff it won't bend under your thumb. Print one test sheet first.</li>
+      <li><b>Scale:</b> print at 100% (“Actual size”).</li>
+      <li><b>How many slips:</b> about 12 a second of animation. More slips with smaller changes look smoother.</li>
+      <li><b>Pages fill evenly</b> when your slip count divides by the slips-per-page number shown on the Make tab.</li>
+    </ul>
+    <h3>How long it plays</h3>
+    <table>
+      <tr><th>Slips</th><th>Slow flip (~8/s)</th><th>Brisk flip (~12/s)</th></tr>
+      <tr><td>24</td><td>3 s</td><td>2 s</td></tr>
+      <tr><td>36</td><td>4.5 s</td><td>3 s</td></tr>
+      <tr><td>48</td><td>6 s</td><td>4 s</td></tr>
+      <tr><td>72</td><td>9 s</td><td>6 s</td></tr>
+    </table>
+  </div>
+</div>
+<div>
+  <div class="card">
+    <h2>Cut, stack, bind</h2>
+    <ol class="steps">
+      <li><b>Cut</b> along the gray lines. Slips sit edge to edge, so one cut separates two slips. A paper trimmer or craft knife with a ruler keeps edges true — straight edges flip far better.</li>
+      <li><b>Stack in number order</b> with the cover on top, slip 1 under it, and the highest number at the bottom, back card last. All pictures face up.</li>
+      <li><b>Square the stack.</b> Tap the binding edge and the flipping edge on the table until every slip lines up. Misaligned slips make the picture jitter.</li>
+      <li><b>Bind the strip side</b> (the shaded edge with the numbers): a strong binder clip is easiest; or glue each slip to the one below along the strip, or wrap the strip tightly in tape. For a sturdier book, glue the back card onto a piece of thick card.</li>
+      <li><b>Flip:</b> hold the binding in one hand, bend the free edge with your thumb, and let the slips slide off one at a time from the front. With the picture on the right, hold in your left hand and flip with your right thumb (and the reverse for picture left).</li>
+    </ol>
+    <div class="note">Why the held frames? The first and last few slips sit against the cover and back and flash by while your thumb finds its grip, so a few repeats at each end let the real motion start and finish cleanly.</div>
+  </div>
+</div>
+</div>
+</section>
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const toast = (msg, ms=2600) => { const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),ms); };
+
+/* ---------- capabilities (optional) ---------- */
+let downloadsNS = null, sampleNS = null;
+if (window.claude && typeof window.claude.use === 'function') {
+  window.claude.use('downloads').then(d => { downloadsNS = d; }).catch(()=>{});
+  window.claude.use('sample').then(s => { sampleNS = s; if (s) { $('#improveBtn').classList.remove('hidden'); } else hideDraw(); }).catch(hideDraw);
+} else { setTimeout(hideDraw, 0); }
+function hideDraw(){
+  $('#drawBtn').classList.add('hidden');
+  $('#drawStatus').textContent = 'Claude drawing is available when this page is opened in Claude. Use the copy & paste route below.';
+  const d = $('#drawBtn').parentElement.querySelector('details'); if (d) d.open = true;
+}
+
+async function saveFile(filename, blob){
+  if (downloadsNS) {
+    try { await downloadsNS.save({filename, data: blob}); return true; }
+    catch (e) {
+      if (e && e.code === 'declined') return false;
+      if (e && e.code === 'rate_limited') { toast('Another save is still open — try again in a moment.'); return false; }
+      // fall through to plain download
+    }
+  }
+  try {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 30000);
+    return true;
+  } catch(e){ toast('Download isn’t available in this view.'); return false; }
+}
+
+/* ---------- tabs ---------- */
+$$('nav button').forEach(b => b.onclick = () => {
+  $$('nav button').forEach(x=>x.classList.toggle('on', x===b));
+  $$('.tab').forEach(t=>t.classList.toggle('on', t.id==='tab-'+b.dataset.tab));
+  window.scrollTo({top:0});
+});
+
+/* ---------- segmented controls ---------- */
+const state = { side:'right', fit:'contain' };
+function seg(id, key, cb){
+  $$(id+' button').forEach(b => b.onclick = () => {
+    $$(id+' button').forEach(x=>x.classList.toggle('on', x===b));
+    state[key] = b.dataset.v; cb && cb(); schedule();
+  });
+}
+seg('#sideSeg','side', sideHelp); seg('#fitSeg','fit');
+function sideHelp(){
+  $('#sideHelp').textContent = state.side==='right'
+    ? 'Binding strip on the left. Hold in your left hand, flip with your right thumb — the usual choice for right-handers.'
+    : 'Binding strip on the right. Hold in your right hand, flip with your left thumb — handy for left-handers.';
+}
+sideHelp();
+
+/* ---------- frames store ---------- */
+// raw: [{blob, thumb(canvas), w, h, time}]
+let raw = [];
+let rawKind = null; // 'video' | 'gif' | 'images' | 'code'
+let videoFile = null;
+const FULL_MAX = 1100, THUMB_MAX = 360;
+
+function makeCanvas(w,h){ const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w)); c.height=Math.max(1,Math.round(h)); return c; }
+function canvasToBlob(c, q=0.92){ return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', q)); }
+
+async function storeFrame(src, sw, sh, time){
+  const s = Math.min(1, FULL_MAX / Math.max(sw, sh));
+  const full = makeCanvas(sw*s, sh*s); const fx = full.getContext('2d');
+  fx.fillStyle = '#fff'; fx.fillRect(0,0,full.width,full.height);
+  fx.drawImage(src, 0, 0, full.width, full.height);
+  const blob = await canvasToBlob(full);
+  const ts = Math.min(1, THUMB_MAX / Math.max(sw, sh));
+  const thumb = makeCanvas(sw*ts, sh*ts);
+  thumb.getContext('2d').drawImage(full, 0, 0, thumb.width, thumb.height);
+  return { blob, thumb, w: full.width, h: full.height, time };
+}
+
+function setProgress(el, f){ el.style.display = f==null ? 'none':'block'; if (f!=null) el.firstElementChild.style.width = (f*100).toFixed(1)+'%'; }
+
+/* ---------- GIF decoder ---------- */
+function lzwDecode(minCodeSize, data, n){
+  const out = new Uint8Array(n);
+  const clear = 1 << minCodeSize, eoi = clear + 1;
+  let codeSize = minCodeSize + 1, dictSize = eoi + 1;
+  const prefix = new Int16Array(4096), suffix = new Uint8Array(4096), stack = new Uint8Array(4097);
+  for (let i=0;i<clear;i++){ prefix[i] = -1; suffix[i] = i; }
+  let datum=0, bits=0, pi=0, op=0, old=-1, first=0;
+  while (op < n) {
+    while (bits < codeSize) { if (pi >= data.length) return out; datum |= data[pi++] << bits; bits += 8; }
+    let code = datum & ((1 << codeSize) - 1); datum >>>= codeSize; bits -= codeSize;
+    if (code === clear) { codeSize = minCodeSize + 1; dictSize = eoi + 1; old = -1; continue; }
+    if (code === eoi) break;
+    if (old === -1) { out[op++] = suffix[code]; old = code; first = code; continue; }
+    const inCode = code; let sp = 0;
+    if (code >= dictSize) { stack[sp++] = first; code = old; }
+    while (code >= clear) { stack[sp++] = suffix[code]; code = prefix[code]; }
+    first = suffix[code]; stack[sp++] = first;
+    if (dictSize < 4096) {
+      prefix[dictSize] = old; suffix[dictSize] = first; dictSize++;
+      if (dictSize === (1 << codeSize) && codeSize < 12) codeSize++;
+    }
+    while (sp > 0 && op < n) out[op++] = stack[--sp];
+    old = inCode;
+  }
+  return out;
+}
+async function decodeGIF(buf, onFrame){
+  const b = new Uint8Array(buf);
+  if (String.fromCharCode(b[0],b[1],b[2]) !== 'GIF') throw new Error('Not a GIF');
+  let p = 6;
+  const W = b[p] | (b[p+1]<<8), H = b[p+2] | (b[p+3]<<8), f = b[p+4]; p += 7;
+  let gct = null;
+  if (f & 0x80) { const n = 1 << ((f & 7) + 1); gct = b.subarray(p, p + 3*n); p += 3*n; }
+  const screen = new Uint8ClampedArray(W*H*4);
+  const cv = makeCanvas(W,H), cx = cv.getContext('2d');
+  let gce = { delay: 10, transp: -1, disposal: 0 };
+  let t = 0, count = 0;
+  const skipSub = () => { while (p < b.length && b[p] !== 0) p += b[p] + 1; p++; };
+  while (p < b.length) {
+    const blk = b[p++];
+    if (blk === 0x3B) break;
+    if (blk === 0x21) {
+      const label = b[p++];
+      if (label === 0xF9) {
+        const pf = b[p+1]; gce = { disposal: (pf>>2)&7, transp: (pf&1) ? b[p+4] : -1, delay: b[p+2] | (b[p+3]<<8) };
+        p += b[p] + 1; skipSub();
+      } else skipSub();
+    } else if (blk === 0x2C) {
+      const x = b[p]|(b[p+1]<<8), y = b[p+2]|(b[p+3]<<8), w = b[p+4]|(b[p+5]<<8), h = b[p+6]|(b[p+7]<<8), pf = b[p+8]; p += 9;
+      let ct = gct;
+      if (pf & 0x80) { const n = 1 << ((pf&7)+1); ct = b.subarray(p, p+3*n); p += 3*n; }
+      const interlace = !!(pf & 0x40);
+      const minCode = b[p++];
+      let len = 0, q = p; while (q < b.length && b[q] !== 0) { len += b[q]; q += b[q] + 1; }
+      const data = new Uint8Array(len); let o = 0;
+      while (p < b.length && b[p] !== 0) { const s = b[p]; data.set(b.subarray(p+1, p+1+s), o); o += s; p += s + 1; } p++;
+      const idx = lzwDecode(minCode, data, w*h);
+      let rowMap = null;
+      if (interlace) { rowMap = []; for (const [s0,st] of [[0,8],[4,8],[2,4],[1,2]]) for (let r=s0;r<h;r+=st) rowMap.push(r); }
+      const saved = gce.disposal === 3 ? screen.slice() : null;
+      if (ct) for (let r=0;r<h;r++) {
+        const row = rowMap ? rowMap[r] : r, py = y + row; if (py >= H) continue;
+        for (let c=0;c<w;c++) {
+          const ci = idx[r*w+c]; if (ci === gce.transp) continue;
+          const px = x + c; if (px >= W) continue;
+          const d = (py*W + px)*4;
+          screen[d] = ct[ci*3]; screen[d+1] = ct[ci*3+1]; screen[d+2] = ct[ci*3+2]; screen[d+3] = 255;
+        }
+      }
+      cx.putImageData(new ImageData(screen.slice(), W, H), 0, 0);
+      await onFrame(cv, W, H, t, count++);
+      t += Math.max(gce.delay || 10, 2) / 100; // browsers treat 0–1 as ~0.1s
+      if (gce.disposal === 2) { for (let r=y;r<Math.min(H,y+h);r++) screen.fill(0, (r*W+x)*4, (r*W+Math.min(W,x+w))*4); }
+      else if (gce.disposal === 3 && saved) screen.set(saved);
+      gce = { delay: 10, transp: -1, disposal: 0 };
+    } else break;
+  }
+  return { W, H, duration: t };
+}
+
+/* ---------- loaders ---------- */
+const drop = $('#drop'), fileIn = $('#file');
+drop.onclick = () => fileIn.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
+drop.ondragleave = () => drop.classList.remove('hover');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('hover'); if (e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files]); };
+fileIn.onchange = () => { if (fileIn.files.length) loadFiles([...fileIn.files]); fileIn.value=''; };
+
+let gifAll = []; // full gif frames before resampling
+async function loadFiles(files){
+  const prog = $('#prog');
+  $('#videoOpts').classList.add('hidden'); $('#gifOpts').classList.add('hidden');
+  try {
+    if (files.length > 1) {
+      files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true}));
+      raw = []; rawKind = 'images';
+      for (let i=0;i<files.length;i++){
+        setProgress(prog, i/files.length);
+        const bmp = await createImageBitmap(files[i]);
+        raw.push(await storeFrame(bmp, bmp.width, bmp.height, i/12)); bmp.close && bmp.close();
+      }
+      setProgress(prog, null);
+      afterLoad(`${files.length} images, one frame each (in filename order).`);
+      return;
+    }
+    const f = files[0];
+    const isGif = f.type === 'image/gif' || /\.gif$/i.test(f.name);
+    if (f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(f.name)) {
+      videoFile = f; rawKind = 'video';
+      $('#videoOpts').classList.remove('hidden');
+      await probeVideo();
+      await extractVideo();
+      return;
+    }
+    if (isGif) {
+      rawKind = 'gif'; gifAll = [];
+      setProgress(prog, 0);
+      const buf = await f.arrayBuffer();
+      const info = await decodeGIF(buf, async (cv, W, H, t, i) => {
+        gifAll.push(await storeFrame(cv, W, H, t));
+        if (i % 4 === 0) { setProgress(prog, Math.min(.95, i/200)); await new Promise(r=>setTimeout(r)); }
+      });
+      gifAll.duration = info.duration;
+      setProgress(prog, null);
+      $('#gifOpts').classList.remove('hidden');
+      $('#gEnd').placeholder = info.duration.toFixed(1);
+      applyGifResample();
+      return;
+    }
+    // animated WebP / APNG via ImageDecoder, else single still
+    if ('ImageDecoder' in window) {
+      try {
+        const dec = new ImageDecoder({ data: await f.arrayBuffer(), type: f.type || 'image/png' });
+        await dec.tracks.ready;
+        const n = dec.tracks.selectedTrack ? dec.tracks.selectedTrack.frameCount : 1;
+        if (n > 1) {
+          raw = []; rawKind = 'images'; let t = 0;
+          for (let i=0;i<n;i++){
+            setProgress(prog, i/n);
+            const { image } = await dec.decode({ frameIndex: i });
+            raw.push(await storeFrame(image, image.displayWidth, image.displayHeight, t));
+            t += (image.duration || 100000) / 1e6; image.close();
+          }
+          setProgress(prog, null);
+          afterLoad(`Animated image, ${n} frames.`); return;
+        }
+      } catch(e) { /* fall through */ }
+    }
+    const bmp = await createImageBitmap(f);
+    raw = [await storeFrame(bmp, bmp.width, bmp.height, 0)]; rawKind='images';
+    afterLoad('That image has only one frame. For a flipbook, choose a GIF, a video, or several images at once.');
+  } catch (e) {
+    console.error(e); setProgress(prog, null);
+    $('#srcInfo').textContent = 'Couldn’t read that file: ' + (e.message || e);
+  }
+}
+
+function applyGifResample(){
+  if (rawKind !== 'gif') return;
+  if (!$('#gResample').checked) {
+    raw = gifAll.slice();
+    afterLoad(`GIF · ${gifAll.length} frames · ${gifAll.duration.toFixed(1)} s`);
+    return;
+  }
+  const fps = clampNum($('#gFps').value, 2, 30, 12), st = Math.max(0, +$('#gStart').value || 0);
+  const en = Math.min(gifAll.duration, +$('#gEnd').value || gifAll.duration);
+  raw = [];
+  for (let t = st; t < en - 1e-6; t += 1/fps) {
+    let k = 0; while (k+1 < gifAll.length && gifAll[k+1].time <= t + 1e-6) k++;
+    raw.push(gifAll[k]);
+  }
+  afterLoad(`GIF · ${gifAll.length} frames → ${raw.length} at ${fps}/s`);
+}
+$('#gResample').onchange = () => { $('#gResampleBox').classList.toggle('hidden', !$('#gResample').checked); applyGifResample(); };
+['#gFps','#gStart','#gEnd'].forEach(s => $(s).onchange = applyGifResample);
+
+/* video */
+let videoEl = null, videoDur = 0;
+function once(el, ev, ms=15000){ return new Promise((res, rej) => { const to = setTimeout(()=>{cleanup(); rej(new Error('Timed out waiting for video ('+ev+')'));}, ms); const h=()=>{cleanup(); res();}; const cleanup=()=>{clearTimeout(to); el.removeEventListener(ev,h);}; el.addEventListener(ev,h); }); }
+async function probeVideo(){
+  if (videoEl) { URL.revokeObjectURL(videoEl.src); videoEl.remove(); }
+  videoEl = document.createElement('video');
+  videoEl.muted = true; videoEl.playsInline = true; videoEl.setAttribute('playsinline',''); videoEl.preload = 'auto';
+  videoEl.style.cssText = 'position:fixed;left:-9999px;width:2px;height:2px;opacity:0';
+  document.body.appendChild(videoEl);
+  videoEl.src = URL.createObjectURL(videoFile);
+  await once(videoEl, 'loadedmetadata');
+  if (videoEl.readyState < 2) { try { await once(videoEl, 'loadeddata', 8000); } catch(e){} }
+  videoDur = videoEl.duration || 0;
+  $('#vEnd').placeholder = videoDur.toFixed(1);
+  const sugEnd = Math.min(videoDur, 4);
+  $('#vEnd').value = sugEnd.toFixed(1);
+  updateEstimate();
+}
+function updateEstimate(){
+  const st = +$('#vStart').value||0, en = Math.min(videoDur, +$('#vEnd').value || videoDur), fps = clampNum($('#vFps').value,2,30,12);
+  const n = Math.max(0, Math.ceil((en-st)*fps));
+  $('#vEstimate').textContent = `Clip is ${videoDur.toFixed(1)} s long. This range gives about ${n} frames.` + (n>120 ? ' That’s a thick book — consider a shorter range or fewer frames per second.' : '');
+}
+['#vStart','#vEnd','#vFps'].forEach(s => $(s).oninput = updateEstimate);
+$('#vExtract').onclick = () => extractVideo();
+async function extractVideo(){
+  if (!videoEl) return;
+  const btn = $('#vExtract'); btn.disabled = true;
+  const prog = $('#prog');
+  const st = Math.max(0, +$('#vStart').value||0);
+  const en = Math.min(videoDur, +$('#vEnd').value || videoDur);
+  const fps = clampNum($('#vFps').value,2,30,12);
+  const W = videoEl.videoWidth, H = videoEl.videoHeight;
+  const cv = makeCanvas(W, H), cx = cv.getContext('2d');
+  const out = [];
+  try {
+    const times = []; for (let t = st; t < en - 1e-6; t += 1/fps) times.push(t);
+    for (let i=0;i<times.length;i++){
+      setProgress(prog, i/times.length);
+      videoEl.currentTime = Math.max(0.001, Math.min(times[i], videoDur - 0.01));
+      await once(videoEl, 'seeked');
+      cx.drawImage(videoEl, 0, 0, W, H);
+      out.push(await storeFrame(cv, W, H, times[i]-st));
+    }
+    raw = out; rawKind = 'video';
+    afterLoad(`Video · ${out.length} frames at ${fps}/s (${st.toFixed(1)}–${en.toFixed(1)} s)`);
+  } catch(e) {
+    $('#srcInfo').textContent = 'Couldn’t pull frames from this video: ' + e.message + '. Try a different format (MP4 is safest).';
+  }
+  setProgress(prog, null); btn.disabled = false;
+}
+
+function afterLoad(msg){
+  $('#srcInfo').textContent = msg;
+  const th = $('#thumbs'); th.innerHTML = '';
+  const step = Math.max(1, Math.ceil(raw.length / 30));
+  for (let i=0;i<raw.length;i+=step){ const c = makeCanvas(raw[i].thumb.width, raw[i].thumb.height); c.getContext('2d').drawImage(raw[i].thumb,0,0); th.appendChild(c); }
+  schedule();
+}
+
+/* ---------- layout ---------- */
+const PAPER = { letter: [8.5, 11], a4: [8.27, 11.69] };
+const PRESETS = { '3x2':[3,2,0.8], '3.5x2':[3.5,2,0.9], '4x2.5':[4,2.5,1], '5x3':[5,3,1.1] };
+function clampNum(v, lo, hi, def){ v = parseFloat(v); if (!isFinite(v)) return def; return Math.min(hi, Math.max(lo, v)); }
+$('#slipPreset').onchange = () => {
+  const p = PRESETS[$('#slipPreset').value];
+  if (p) { $('#slipW').value = p[0]; $('#slipH').value = p[1]; $('#bindW').value = p[2]; }
+  schedule();
+};
+function getLayout(){
+  const [pw, ph] = PAPER[$('#paper').value];
+  const sw = clampNum($('#slipW').value, 1.5, 7, 3.5), sh = clampNum($('#slipH').value, 1, 5, 2);
+  const bw = Math.min(sw - 0.6, clampNum($('#bindW').value, 0.4, 2, 0.9));
+  const m = 0.3;
+  const fit = (W,H) => ({ cols: Math.max(1, Math.floor((W-2*m+1e-6)/sw)), rows: Math.max(1, Math.floor((H-2*m+1e-6)/sh)) });
+  const a = fit(pw, ph), b = fit(ph, pw);
+  const land = b.cols*b.rows > a.cols*a.rows;
+  const W = land ? ph : pw, H = land ? pw : ph, g = land ? b : a;
+  return { W, H, orient: land ? 'landscape' : 'portrait', cols: g.cols, rows: g.rows, per: g.cols*g.rows,
+    sw, sh, bw, offX: (W - g.cols*sw)/2, offY: (H - g.rows*sh)/2 };
+}
+function getSlips(){
+  if (!raw.length) return [];
+  let order = raw.map((_,i)=>i);
+  if ($('#reverse').checked) order.reverse();
+  const loops = clampNum($('#loops').value,1,10,1)|0;
+  let seq = []; for (let l=0;l<loops;l++) seq = seq.concat(order);
+  const hs = clampNum($('#holdStart').value,0,20,0)|0, he = clampNum($('#holdEnd').value,0,20,0)|0;
+  seq = Array(hs).fill(seq[0]).concat(seq, Array(he).fill(seq[seq.length-1]));
+  const slips = [];
+  if ($('#cover').checked) slips.push({ kind:'cover' });
+  seq.forEach((fi, i) => slips.push({ kind:'frame', fi, n: i+1 }));
+  if ($('#back').checked) slips.push({ kind:'back' });
+  return slips;
+}
+
+/* ---------- drawing ---------- */
+function adjustRegion(ctx, x, y, w, h){
+  const gray = $('#gray').checked, c = +$('#contrast').value, br = +$('#bright').value;
+  if (!gray && !c && !br) return;
+  x=Math.round(x); y=Math.round(y); w=Math.round(w); h=Math.round(h); if (w<1||h<1) return;
+  const id = ctx.getImageData(x, y, w, h), d = id.data;
+  const k = (100 + c) / 100, kk = k*k, off = br * 2.55;
+  for (let i=0;i<d.length;i+=4){
+    let r=d[i], g=d[i+1], b=d[i+2];
+    if (gray){ const l = 0.299*r + 0.587*g + 0.114*b; r=g=b=l; }
+    if (c){ r=(r-128)*kk+128; g=(g-128)*kk+128; b=(b-128)*kk+128; }
+    if (br){ r+=off; g+=off; b+=off; }
+    d[i]=r; d[i+1]=g; d[i+2]=b;
+  }
+  ctx.putImageData(id, x, y);
+}
+
+function drawSlip(ctx, L, s, x, y, dpi, img){
+  const sw = L.sw*dpi, sh = L.sh*dpi, bw = L.bw*dpi;
+  const imgLeft = state.side === 'left';
+  const bx = imgLeft ? x + sw - bw : x;           // binding strip x
+  const ix = imgLeft ? x : x + bw;                // image area x
+  const iw = sw - bw, ih = sh;
+  const pad = 0.07*dpi;
+  ctx.fillStyle = '#fff'; ctx.fillRect(x, y, sw, sh);
+  if ($('#tint').checked) { ctx.fillStyle = '#efefef'; ctx.fillRect(bx, y, bw, sh); }
+  // glue line
+  ctx.save(); ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = Math.max(1, dpi/160); ctx.setLineDash([dpi*0.04, dpi*0.04]);
+  const gx = imgLeft ? bx : bx + bw; ctx.beginPath(); ctx.moveTo(gx, y + dpi*0.08); ctx.lineTo(gx, y + sh - dpi*0.08); ctx.stroke(); ctx.restore();
+
+  const title = $('#title').value.trim();
+  // label in strip
+  let label = s.kind === 'cover' ? 'COVER' : s.kind === 'back' ? 'BACK' : String(s.n);
+  ctx.save();
+  ctx.translate(bx + bw/2, y + sh/2); ctx.rotate(imgLeft ? Math.PI/2 : -Math.PI/2);
+  ctx.fillStyle = '#222'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const big = s.kind === 'frame' ? Math.min(bw*0.42, sh*0.24) : Math.min(bw*0.2, sh*0.12);
+  ctx.font = `700 ${big}px Georgia, "Times New Roman", serif`;
+  ctx.fillText(label, 0, title && s.kind==='frame' ? -bw*0.12 : 0);
+  if (title && s.kind === 'frame') {
+    ctx.fillStyle = '#888'; ctx.font = `${Math.min(bw*0.12, sh*0.08)}px Georgia, serif`;
+    let t = title; while (ctx.measureText(t).width > sh*0.85 && t.length > 3) t = t.slice(0,-2);
+    if (t !== title) t = t.slice(0,-1) + '…';
+    ctx.fillText(t, 0, bw*0.26);
+  }
+  ctx.restore();
+
+  if (s.kind === 'frame' && img) {
+    const aw = iw - 2*pad, ah = ih - 2*pad;
+    const r = state.fit === 'cover' ? Math.max(aw/img.width, ah/img.height) : Math.min(aw/img.width, ah/img.height);
+    const dw = img.width*r, dh = img.height*r;
+    ctx.save(); ctx.beginPath(); ctx.rect(ix+pad, y+pad, aw, ah); ctx.clip();
+    ctx.drawImage(img, ix + pad + (aw-dw)/2, y + pad + (ah-dh)/2, dw, dh);
+    ctx.restore();
+    adjustRegion(ctx, ix+pad, y+pad, aw, ah);
+  } else if (s.kind === 'cover') {
+    ctx.save(); ctx.fillStyle = '#222'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    const cx0 = ix + iw/2, cy0 = y + ih/2;
+    if (title) {
+      let fs = ih*0.2; ctx.font = `700 ${fs}px Georgia, "Times New Roman", serif`;
+      while (ctx.measureText(title).width > iw*0.86 && fs > ih*0.07) { fs *= 0.92; ctx.font = `700 ${fs}px Georgia, "Times New Roman", serif`; }
+      ctx.fillText(title, cx0, cy0 - ih*0.06);
+      ctx.fillStyle = '#777'; ctx.font = `italic ${ih*0.08}px Georgia, serif`; ctx.fillText('a flipbook', cx0, cy0 + ih*0.14);
+    } else {
+      ctx.font = `700 ${ih*0.16}px Georgia, serif`; ctx.fillText('Flipbook', cx0, cy0);
+    }
+    ctx.restore();
+  } else if (s.kind === 'back') {
+    ctx.save(); ctx.fillStyle = '#bbb'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = `italic ${ih*0.07}px Georgia, serif`; ctx.fillText('glue onto stiff card for a firm back', ix+iw/2, y+ih/2); ctx.restore();
+  }
+  if ($('#cutLines').checked) {
+    ctx.save(); ctx.strokeStyle = '#9a9a9a'; ctx.lineWidth = Math.max(1, dpi/200);
+    ctx.strokeRect(x, y, sw, sh); ctx.restore();
+  }
+}
+
+async function renderPage(L, slips, pageIdx, dpi, full){
+  const c = makeCanvas(L.W*dpi, L.H*dpi), ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,c.width,c.height);
+  const start = pageIdx*L.per;
+  for (let k=0;k<L.per;k++){
+    const s = slips[start+k]; if (!s) break;
+    const col = k % L.cols, row = Math.floor(k / L.cols);
+    const x = (L.offX + col*L.sw)*dpi, y = (L.offY + row*L.sh)*dpi;
+    let img = null, bmp = null;
+    if (s.kind === 'frame') {
+      const fr = raw[s.fi];
+      if (full) { bmp = await createImageBitmap(fr.blob); img = bmp; } else img = fr.thumb;
+    }
+    drawSlip(ctx, L, s, x, y, dpi, img);
+    if (bmp && bmp.close) bmp.close();
+  }
+  // footer
+  ctx.fillStyle = '#aaa'; ctx.font = `${0.11*dpi}px -apple-system, sans-serif`; ctx.textAlign = 'center';
+  const total = Math.ceil(slips.length / L.per);
+  ctx.fillText(`Sheet ${pageIdx+1} of ${total}  ·  print at 100%  ·  cut on gray lines`, c.width/2, c.height - 0.12*dpi);
+  return c;
+}
+
+/* ---------- preview ---------- */
+let renderTimer = null, renderToken = 0;
+function schedule(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 120); }
+['#paper','#slipW','#slipH','#bindW','#loops','#holdStart','#holdEnd','#reverse','#cover','#back','#title','#gray','#contrast','#bright','#cutLines','#tint']
+  .forEach(s => { $(s).addEventListener('input', schedule); $(s).addEventListener('change', schedule); });
+['#slipW','#slipH','#bindW'].forEach(s => $(s).addEventListener('input', () => { $('#slipPreset').value = 'custom'; }));
+
+async function renderPreview(){
+  const token = ++renderToken;
+  const L = getLayout(), slips = getSlips();
+  const pages = Math.ceil(slips.length / L.per);
+  const frames = slips.filter(s=>s.kind==='frame').length;
+  const st = $('#stats'); st.innerHTML = '';
+  const pill = (t, warn) => { const e = document.createElement('span'); e.className = 'pill' + (warn?' warn':''); e.textContent = t; st.appendChild(e); };
+  if (!raw.length) { pill(`${L.per} slips per sheet (${L.cols}×${L.rows}, ${L.orient})`); $('#pdfBtn').disabled = $('#pngBtn').disabled = true; drawFlip(0); return; }
+  pill(`${frames} frame slips`); pill(`${L.per} per sheet (${L.cols}×${L.rows})`); pill(`${pages} sheet${pages>1?'s':''}`);
+  pill(`≈ ${(frames/12).toFixed(1)} s at a brisk flip`);
+  if (frames > 150) pill('Very thick book — hard to bind', true);
+  else if (frames < 12) pill('Short — under a second of motion', true);
+  const empty = pages*L.per - slips.length; if (empty) pill(`${empty} empty spot${empty>1?'s':''} on last sheet`);
+  $('#pdfBtn').disabled = $('#pngBtn').disabled = false;
+  const box = $('#pages'); box.innerHTML = '';
+  const show = Math.min(pages, 6);
+  for (let i=0;i<show;i++){
+    if (token !== renderToken) return;
+    const c = await renderPage(L, slips, i, 60, false);
+    box.appendChild(c);
+    const lb = document.createElement('div'); lb.className='pageLabel'; lb.textContent = `Sheet ${i+1}`; box.appendChild(lb);
+  }
+  if (pages > show) { const p = document.createElement('p'); p.className='muted'; p.textContent = `+ ${pages-show} more sheet${pages-show>1?'s':''} in the PDF.`; box.appendChild(p); }
+  flipIdx = 0; drawFlip(0);
+}
+
+/* flip preview */
+let playing = false, flipIdx = 0, lastT = 0;
+function drawFlip(i){
+  const c = $('#flipCanvas'), L = getLayout();
+  const dpi = Math.min(420 / L.sw, 260 / L.sh);
+  c.width = Math.round(L.sw*dpi); c.height = Math.round(L.sh*dpi);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const slips = getSlips().filter(s=>s.kind==='frame');
+  if (!slips.length) { ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#aaa'; ctx.textAlign='center'; ctx.font='15px sans-serif'; ctx.fillText('Your animation plays here', c.width/2, c.height/2); return; }
+  const s = slips[i % slips.length];
+  drawSlip(ctx, L, s, 0, 0, dpi, raw[s.fi].thumb);
+}
+function loop(t){
+  if (!playing) return;
+  const fps = +$('#playFps').value;
+  if (t - lastT >= 1000/fps) { lastT = t; flipIdx++; drawFlip(flipIdx); }
+  requestAnimationFrame(loop);
+}
+$('#playBtn').onclick = () => { playing = !playing; $('#playBtn').textContent = playing ? 'Pause' : 'Play'; if (playing) requestAnimationFrame(loop); };
+$('#playFps').oninput = () => $('#playFpsLbl').textContent = $('#playFps').value + ' slips/sec';
+
+/* ---------- export ---------- */
+const baseName = () => ($('#title').value.trim() || 'flipbook').replace(/[^\w\- ]+/g,'').replace(/\s+/g,'-').toLowerCase() || 'flipbook';
+$('#pdfBtn').onclick = async () => {
+  if (!window.jspdf) { toast('PDF maker didn’t load — use “Download page images” instead.'); return; }
+  const btn = $('#pdfBtn'); btn.disabled = true; const prog = $('#pdfProg');
+  try {
+    const L = getLayout(), slips = getSlips(), pages = Math.ceil(slips.length / L.per);
+    const doc = new window.jspdf.jsPDF({ unit:'in', format: $('#paper').value, orientation: L.orient });
+    for (let i=0;i<pages;i++){
+      setProgress(prog, i/pages);
+      const c = await renderPage(L, slips, i, 220, true);
+      if (i) doc.addPage($('#paper').value, L.orient);
+      doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, L.W, L.H, undefined, 'FAST');
+      await new Promise(r=>setTimeout(r));
+    }
+    setProgress(prog, 1);
+    const blob = doc.output('blob');
+    const ok = await saveFile(baseName() + '.pdf', blob);
+    if (ok) toast('PDF ready.');
+  } catch(e) { console.error(e); toast('Something went wrong making the PDF: ' + e.message); }
+  setProgress(prog, null); btn.disabled = false;
+};
+$('#pngBtn').onclick = async () => {
+  const btn = $('#pngBtn'); btn.disabled = true; const prog = $('#pdfProg');
+  try {
+    const L = getLayout(), slips = getSlips(), pages = Math.ceil(slips.length / L.per);
+    for (let i=0;i<pages;i++){
+      setProgress(prog, i/pages);
+      const c = await renderPage(L, slips, i, 220, true);
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+      const ok = await saveFile(`${baseName()}-sheet-${i+1}.png`, blob);
+      if (!ok) break;
+    }
+  } catch(e) { toast('Couldn’t save images: ' + e.message); }
+  setProgress(prog, null); btn.disabled = false;
+};
+
+/* ---------- code boxes ---------- */
+function codeBox(tag, text){
+  const w = document.createElement('div'); w.className = 'code';
+  if (tag) { const t = document.createElement('div'); t.className='tag'; t.textContent = tag; w.appendChild(t); }
+  const pre = document.createElement('pre'); pre.textContent = text; w.appendChild(pre);
+  const b = document.createElement('button'); b.className='copy'; b.textContent='Copy';
+  if (tag) b.style.top = '30px';
+  b.onclick = async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent='Copied'; }
+    catch(e){ const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent='Selected — copy it'; }
+    setTimeout(()=>b.textContent='Copy', 1800);
+  };
+  w.appendChild(b); return w;
+}
+
+/* ---------- prompt builder ---------- */
+const pv = id => $('#'+id).value.trim();
+function beats(){
+  const b1=pv('pB1'), b2=pv('pB2'), b3=pv('pB3');
+  if (!b1 && !b2 && !b3) return '';
+  const d = +pv('pDur') || 3;
+  const a = (d/3).toFixed(1).replace(/\.0$/,''), b = (2*d/3).toFixed(1).replace(/\.0$/,'');
+  return ` Timing: [0–${a}s] ${b1||'starting pose'}; [${a}–${b}s] ${b2||'the main movement'}; [${b}–${d}s] ${b3||'ending pose'}.`;
+}
+function buildPrompts(){
+  const tool = pv('pTool'), subj = pv('pSubject')||'a simple character', act = pv('pAction')||'moves',
+    style = pv('pStyle'), bg = pv('pBg')||'plain white', dur = +pv('pDur')||3, asp = pv('pAspect'), loop = $('#pLoop').checked;
+  const loopTxt = loop ? ' Seamless loop: the final pose matches the first pose exactly.' : '';
+  const out = $('#promptOut'); out.innerHTML = '';
+  if (tool === 't2v') {
+    const p = `Locked-off static camera, no camera movement, no zoom, no cuts. ${cap(style)} of ${subj} that ${act}, seen from the side, centered and fully inside the frame the whole time. ${cap(bg)} background that never moves. High contrast, bold clear shapes, minimal fine detail. Even, flat lighting with no flicker.${beats()} One continuous ${dur}-second shot, ${asp} aspect ratio.${loopTxt} No text, no logos, no extra characters, no background motion.`;
+    out.appendChild(codeBox('Video prompt', p));
+  } else if (tool === 'i2v') {
+    const img = `${cap(style)} of ${subj}, side view, centered with space around it, on a ${bg} background. High contrast, bold clear shapes, minimal fine detail, even flat lighting, no text. ${asp} aspect ratio. The starting pose: ${pv('pB1') || 'just before it ' + act}.`;
+    const mot = `Animate this image. The camera stays completely still — no pan, no zoom, no cuts. Only ${subj} moves: it ${act}.${beats()} The background does not change. Keep the same drawing style and line weight in every frame. ${dur} seconds.${loopTxt}`;
+    out.appendChild(codeBox('Step 1 · Image prompt', img));
+    out.appendChild(codeBox('Step 2 · Motion prompt (attach the image)', mot));
+  } else {
+    out.appendChild(codeBox('Chat prompt', codePrompt(`${subj} that ${act}${beats()}`, 24, style)));
+    const n = document.createElement('p'); n.className='muted';
+    n.textContent = 'Paste what it returns into “Use another AI instead” in the Draw it box below.';
+    out.appendChild(n);
+  }
+}
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+['pTool','pSubject','pAction','pStyle','pBg','pDur','pAspect','pLoop','pB1','pB2','pB3'].forEach(id => { $('#'+id).addEventListener('input', buildPrompts); $('#'+id).addEventListener('change', buildPrompts); });
+buildPrompts();
+
+$('#improveBtn').onclick = async () => {
+  if (!sampleNS) return;
+  const btn = $('#improveBtn'); btn.disabled = true;
+  const out = $('#improveOut'); out.innerHTML = '<p class="muted">Thinking…</p>';
+  const current = [...$('#promptOut').querySelectorAll('pre')].map(p=>p.textContent).join('\n\n---\n\n');
+  const tool = $('#pTool').selectedOptions[0].textContent;
+  const instr = `You help people make AI-generated animations that will be printed as a paper flipbook (small slips, about 2 inches tall, flipped by thumb at roughly 12 frames per second).
+Rewrite the draft prompt below so it works as well as possible for this tool: ${tool}.
+Flipbook needs: a completely locked camera, one subject doing one clear action, plain unmoving background, strong contrast and bold shapes, subject centered and fully in frame, 2–4 seconds, consistent style across frames, no text.
+Keep the person's subject, action and style. If the draft has two steps (image then motion), return both, labeled "IMAGE PROMPT:" and "MOTION PROMPT:".
+Return only the finished prompt text, no commentary, no markdown.
+
+DRAFT:
+${current}`;
+  try {
+    const r = await sampleNS(instr, { modelTier: 'default' });
+    out.innerHTML = '';
+    out.appendChild(codeBox('Tailored by Claude', r.text.trim()));
+  } catch(e) {
+    out.innerHTML = '';
+    if (e && e.code === 'not_granted') { btn.classList.add('hidden'); }
+    else { const p=document.createElement('p'); p.className='muted'; p.textContent = 'Claude couldn’t answer just now' + (e && e.code==='rate_limited' ? ' — try again in a minute.' : '.'); out.appendChild(p); }
+  }
+  btn.disabled = false;
+};
+
+/* ---------- draw with code ---------- */
+function codePrompt(desc, frames, style){
+  const L = getLayout(); const aw = (L.sw - L.bw), ah = L.sh;
+  return `Write a JavaScript function that draws ONE frame of a short looping animation onto an HTML canvas. It will be printed as a paper flipbook.
+
+Animation: ${desc}
+Look: ${style}.
+
+Exact format:
+function draw(ctx, t, w, h) {
+  // ctx = CanvasRenderingContext2D, w × h = canvas size in pixels (about ${aw.toFixed(2)}:${ah.toFixed(2)} wide:tall)
+  // t = 0 at the first frame and approaches 1 at the last; t = 1 would equal t = 0 (seamless loop)
+}
+
+Rules:
+- Start every frame by filling the whole canvas with the background color.
+- Size and place everything relative to w and h. Keep the subject centered and fully inside the canvas.
+- No camera movement; the background stays still. Only the subject moves.
+- Bold shapes and thick lines (line width at least w/150). No text.
+- Deterministic: the same t always draws the same picture. No Math.random, no timers, no images, no external libraries, no DOM access.
+- Use easing and squash/stretch so the motion feels alive at ${frames} frames.
+Reply with only the function inside one code block.`;
+}
+function updateCodePrompt(){
+  const box = $('#codePromptOut'); box.innerHTML = '';
+  box.appendChild(codeBox('Prompt for any chat AI', codePrompt(pv('dDesc') || 'a bouncing ball', +pv('dFrames')||24, $('#dStyle').value)));
+}
+['dDesc','dFrames','dStyle'].forEach(id => $('#'+id).addEventListener('input', updateCodePrompt));
+$('#dStyle').addEventListener('change', updateCodePrompt);
+updateCodePrompt();
+
+function extractCode(text){
+  const m = text.match(/```(?:js|javascript)?\s*([\s\S]*?)```/i);
+  return (m ? m[1] : text).trim();
+}
+function compileDraw(code){
+  // accept a full `function draw(...)` or just a body
+  if (/function\s+draw\s*\(/.test(code) || /(const|let|var)\s+draw\s*=/.test(code)) {
+    return new Function(code + '\n;return draw;')();
+  }
+  return new Function('ctx','t','w','h', code);
+}
+async function renderCodeFrames(code, n){
+  const draw = compileDraw(code);
+  const L = getLayout();
+  const aspect = (L.sw - L.bw) / L.sh;
+  const H = 700, W = Math.round(H*aspect);
+  const cv = makeCanvas(W, H), ctx = cv.getContext('2d');
+  const out = [], prog = $('#prog');
+  for (let i=0;i<n;i++){
+    ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    draw(ctx, i/n, W, H);
+    ctx.restore();
+    out.push(await storeFrame(cv, W, H, i/12));
+    setProgress(prog, i/n);
+  }
+  setProgress(prog, null);
+  raw = out; rawKind = 'code';
+  $('#videoOpts').classList.add('hidden'); $('#gifOpts').classList.add('hidden');
+  afterLoad(`Drawn by code · ${n} frames`);
+}
+let lastCodeErr = '';
+async function useCode(code, label){
+  const n = clampNum($('#dFrames').value, 6, 120, 24)|0;
+  try {
+    await renderCodeFrames(code, n);
+    const o = $('#drawCodeOut'); o.innerHTML = '';
+    o.appendChild(codeBox(label, code));
+    $('#drawStatus').textContent = `Done — ${n} frames are loaded on the Make tab.`;
+    toast('Frames loaded — see the Make tab.');
+    if (!$('#title').value.trim()) { $('#title').value = ''; }
+    return true;
+  } catch(e) {
+    lastCodeErr = e.message;
+    $('#drawStatus').textContent = 'That code didn’t run: ' + e.message;
+    return false;
+  }
+}
+$('#renderPasted').onclick = () => { const c = extractCode($('#pasteCode').value); if (c) useCode(c, 'Your pasted code'); };
+$('#drawBtn').onclick = async () => {
+  if (!sampleNS) return;
+  const btn = $('#drawBtn'); btn.disabled = true;
+  const st = $('#drawStatus'); st.textContent = 'Claude is drawing…';
+  const prompt = codePrompt(pv('dDesc') || 'a bouncing ball', +pv('dFrames')||24, $('#dStyle').value);
+  try {
+    let r = await sampleNS(prompt, { modelTier: 'default', onText: ({text}) => { st.textContent = 'Claude is drawing… (' + text.length + ' characters)'; } });
+    let code = extractCode(r.text);
+    let ok = await useCode(code, 'Claude’s drawing code');
+    if (!ok) {
+      st.textContent = 'Fixing a bug in the drawing…';
+      r = await sampleNS([
+        { role:'user', content: prompt },
+        { role:'assistant', content: r.text },
+        { role:'user', content: 'That code threw an error: ' + lastCodeErr + '. Please return a corrected version, same format.' }
+      ], { modelTier: 'default' });
+      await useCode(extractCode(r.text), 'Claude’s drawing code');
+    }
+  } catch(e) {
+    if (e && e.code === 'not_granted') hideDraw();
+    else st.textContent = 'Claude couldn’t answer just now' + (e && e.code==='rate_limited' ? ' — try again in a minute.' : '.');
+  }
+  btn.disabled = false;
+};
+
+renderPreview();
+})();
+</script>
+</body>
+</html>
