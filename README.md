@@ -20,6 +20,10 @@ If the browser can't decode a video (AVI, WMV, FLV, HEVC on some browsers, etc.)
 
 The ffmpeg core lives in `ffmpeg/`: `ffmpeg-core.js` plus the 32 MB `ffmpeg-core.wasm` split into `core-0.wasm` and `core-1.wasm` (to stay under per-file hosting limits); the page rejoins them. They're only downloaded when a video needs converting. Because the page fetches these files, serve the folder over HTTP rather than opening `index.html` from disk if you need conversion.
 
+## Silhouette print & cut
+
+Tick **Cut on a Silhouette machine** to keep slips clear of the registration-mark corners and download a cut kit (.zip): for each sheet a page-sized PNG to print and a DXF of the cut lines (millimetres, shared edges cut once, red page frame for alignment, blue = cut), plus step-by-step instructions. DXF works in the free Basic Edition of Silhouette Studio.
+
 ## Animate with AI
 
 - Advice for getting flipbook-friendly clips from AI video tools (locked camera, one subject and one action, plain background, bold shapes, 2–4 seconds).

@@ -128,6 +128,8 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
 
   <div class="card">
     <h2>Layout</h2>
+    <label class="check"><input type="checkbox" id="silMode"> Cut on a Silhouette machine (print &amp; cut)</label>
+    <p class="muted hidden" id="silHelp">Slips are kept clear of the corners where Silhouette prints its registration marks, and you get a cut kit (sheet pictures + DXF cut lines) to open in Silhouette Studio. Steps are on the “Cut &amp; bind” tab.</p>
     <label>Picture side</label>
     <div class="seg" id="sideSeg">
       <button data-v="right" class="on">Picture right</button>
@@ -188,6 +190,7 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
     <div class="row" style="flex-wrap:wrap">
       <button class="btn" id="pdfBtn" disabled>Download PDF</button>
       <button class="btn sec" id="pngBtn" disabled>Download page images</button>
+      <button class="btn hidden" id="silBtn" disabled>Download Silhouette cut kit</button>
     </div>
     <div class="progress" id="pdfProg"><div></div></div>
     <p class="muted" style="margin-bottom:0">Print at 100% / “Actual size” — not “Fit to page” — so slips come out the right size.</p>
@@ -330,6 +333,15 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
       <li><b>Bind the strip side</b> (the shaded edge with the numbers): a strong binder clip is easiest; or glue each slip to the one below along the strip, or wrap the strip tightly in tape. For a sturdier book, glue the back card onto a piece of thick card.</li>
       <li><b>Flip:</b> hold the binding in one hand, bend the free edge with your thumb, and let the slips slide off one at a time from the front. With the picture on the right, hold in your left hand and flip with your right thumb (and the reverse for picture left).</li>
     </ol>
+    <h3>Cutting on a Silhouette</h3>
+    <ol class="steps">
+      <li>On the Make tab, tick <b>Cut on a Silhouette machine</b>, then <b>Download Silhouette cut kit</b>. The zip has a picture and a DXF cut file for each sheet, plus these steps.</li>
+      <li>In Silhouette Studio’s Page Setup: Letter or A4, portrait, <b>Registration Marks on</b> (Type 1 for Cameo/Portrait), default positions.</li>
+      <li>Merge in <b>sheet-01.png</b>, set it to the full page size, and position it at X 0, Y 0.</li>
+      <li>Merge in <b>sheet-01-cut.dxf</b>, set its width to the page width, and position it at X 0, Y 0. Its red frame lines up with the page edge; the blue lines should sit on the slip edges.</li>
+      <li><b>Print from Studio</b> (so the registration marks print), put the sheet on the mat, and in the Send panel cut <b>blue only</b>, with red set to no cut.</li>
+    </ol>
+    <p class="muted">Works in the free Basic Edition, which opens DXF but not SVG. Print &amp; cut can land about 1/16″ off, so printed border lines are turned off in this mode.</p>
     <div class="note">Why the held frames? The first and last few slips sit against the cover and back and flash by while your thumb finds its grip, so a few repeats at each end let the real motion start and finish cleanly.</div>
   </div>
 </div>
@@ -790,14 +802,17 @@ $('#slipPreset').onchange = () => {
   if (p) { $('#slipW').value = p[0]; $('#slipH').value = p[1]; $('#bindW').value = p[2]; }
   schedule();
 };
+const SIL_MX = 0.6, SIL_MY = 1.35;
 function getLayout(){
   const [pw, ph] = PAPER[$('#paper').value];
   const sw = clampNum($('#slipW').value, 1.5, 7, 3.5), sh = clampNum($('#slipH').value, 1, 5, 2);
   const bw = Math.min(sw - 0.6, clampNum($('#bindW').value, 0.4, 2, 0.9));
-  const m = 0.3;
-  const fit = (W,H) => ({ cols: Math.max(1, Math.floor((W-2*m+1e-6)/sw)), rows: Math.max(1, Math.floor((H-2*m+1e-6)/sh)) });
+  const sil = $('#silMode').checked;
+  // Silhouette mode: keep a wide band at top and bottom clear of the registration marks (and their no-print zones).
+  const mx = sil ? SIL_MX : 0.3, my = sil ? SIL_MY : 0.3;
+  const fit = (W,H) => ({ cols: Math.max(1, Math.floor((W-2*mx+1e-6)/sw)), rows: Math.max(1, Math.floor((H-2*my+1e-6)/sh)) });
   const a = fit(pw, ph), b = fit(ph, pw);
-  const land = b.cols*b.rows > a.cols*a.rows;
+  const land = !sil && b.cols*b.rows > a.cols*a.rows;   // Silhouette mode stays portrait to match Studio's default page
   const W = land ? ph : pw, H = land ? pw : ph, g = land ? b : a;
   return { W, H, orient: land ? 'landscape' : 'portrait', cols: g.cols, rows: g.rows, per: g.cols*g.rows,
     sw, sh, bw, offX: (W - g.cols*sw)/2, offY: (H - g.rows*sh)/2 };
@@ -910,7 +925,8 @@ async function renderPage(L, slips, pageIdx, dpi, full){
     drawSlip(ctx, L, s, x, y, dpi, img);
     if (bmp && bmp.close) bmp.close();
   }
-  // footer
+  // footer (left off in Silhouette mode so nothing prints near the registration marks)
+  if ($('#silMode').checked) return c;
   ctx.fillStyle = '#aaa'; ctx.font = `${0.11*dpi}px -apple-system, sans-serif`; ctx.textAlign = 'center';
   const total = Math.ceil(slips.length / L.per);
   ctx.fillText(`Sheet ${pageIdx+1} of ${total}  ·  print at 100%  ·  cut on gray lines`, c.width/2, c.height - 0.12*dpi);
@@ -931,13 +947,13 @@ async function renderPreview(){
   const frames = slips.filter(s=>s.kind==='frame').length;
   const st = $('#stats'); st.innerHTML = '';
   const pill = (t, warn) => { const e = document.createElement('span'); e.className = 'pill' + (warn?' warn':''); e.textContent = t; st.appendChild(e); };
-  if (!raw.length) { pill(`${L.per} slips per sheet (${L.cols}×${L.rows}, ${L.orient})`); $('#pdfBtn').disabled = $('#pngBtn').disabled = true; drawFlip(0); return; }
+  if (!raw.length) { pill(`${L.per} slips per sheet (${L.cols}×${L.rows}, ${L.orient})`); $('#pdfBtn').disabled = $('#pngBtn').disabled = $('#silBtn').disabled = true; drawFlip(0); return; }
   pill(`${frames} frame slips`); pill(`${L.per} per sheet (${L.cols}×${L.rows})`); pill(`${pages} sheet${pages>1?'s':''}`);
   pill(`≈ ${(frames/12).toFixed(1)} s at a brisk flip`);
   if (frames > 150) pill('Very thick book — hard to bind', true);
   else if (frames < 12) pill('Short — under a second of motion', true);
   const empty = pages*L.per - slips.length; if (empty) pill(`${empty} empty spot${empty>1?'s':''} on last sheet`);
-  $('#pdfBtn').disabled = $('#pngBtn').disabled = false;
+  $('#pdfBtn').disabled = $('#pngBtn').disabled = $('#silBtn').disabled = false;
   const box = $('#pages'); box.innerHTML = '';
   const show = Math.min(pages, 6);
   for (let i=0;i<show;i++){
@@ -1005,6 +1021,126 @@ $('#pngBtn').onclick = async () => {
       if (!ok) break;
     }
   } catch(e) { toast('Couldn’t save images: ' + e.message); }
+  setProgress(prog, null); btn.disabled = false;
+};
+
+/* ---------- Silhouette cut kit ---------- */
+$('#silMode').addEventListener('change', () => {
+  const on = $('#silMode').checked;
+  $('#silHelp').classList.toggle('hidden', !on);
+  $('#silBtn').classList.toggle('hidden', !on);
+  // Printed gray cut lines would show if the blade lands a hair off (print & cut allows ~1/16"), so default them off.
+  $('#cutLines').checked = !on;
+  schedule();
+});
+
+// Cut segments (inches, page coords, y down) for the slips on one sheet, shared edges cut once.
+function sheetCutSegments(L, count){
+  const H = new Map(), V = new Map(); // key -> Set of unit cells
+  const add = (map, key, i) => { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(i); };
+  for (let k = 0; k < count; k++) {
+    const c = k % L.cols, r = Math.floor(k / L.cols);
+    add(H, r, c); add(H, r + 1, c);     // horizontal edges at row lines r, r+1 spanning column c
+    add(V, c, r); add(V, c + 1, r);     // vertical edges at col lines c, c+1 spanning row r
+  }
+  const segs = [];
+  const runs = set => { const a = [...set].sort((x,y)=>x-y), out = []; let s0 = a[0], p = a[0];
+    for (let i = 1; i <= a.length; i++) { if (i < a.length && a[i] === p + 1) { p = a[i]; continue; } out.push([s0, p + 1]); if (i < a.length) { s0 = p = a[i]; } } return out; };
+  for (const [r, set] of H) for (const [c0, c1] of runs(set))
+    segs.push([L.offX + c0*L.sw, L.offY + r*L.sh, L.offX + c1*L.sw, L.offY + r*L.sh]);
+  for (const [c, set] of V) for (const [r0, r1] of runs(set))
+    segs.push([L.offX + c*L.sw, L.offY + r0*L.sh, L.offX + c*L.sw, L.offY + r1*L.sh]);
+  return segs;
+}
+// Minimal R12 ASCII DXF in millimetres (Silhouette Studio reads 1 DXF unit as 1 mm), origin bottom-left, y up.
+function makeDXF(L, segs){
+  const mm = v => (v * 25.4).toFixed(4);
+  const out = ['0','SECTION','2','HEADER','9','$ACADVER','1','AC1009','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES'];
+  const line = (x1, y1, x2, y2, layer, color) => out.push('0','LINE','8',layer,'62',String(color),
+    '10', mm(x1), '20', mm(L.H - y1), '30', '0', '11', mm(x2), '21', mm(L.H - y2), '31', '0');
+  // Red page frame: lets you snap the cut lines to the page in Studio. Set red to "no cut".
+  line(0,0,L.W,0,'PAGE_FRAME_NO_CUT',1); line(L.W,0,L.W,L.H,'PAGE_FRAME_NO_CUT',1);
+  line(L.W,L.H,0,L.H,'PAGE_FRAME_NO_CUT',1); line(0,L.H,0,0,'PAGE_FRAME_NO_CUT',1);
+  for (const [x1,y1,x2,y2] of segs) line(x1, y1, x2, y2, 'CUT', 5); // blue = cut
+  out.push('0','ENDSEC','0','EOF');
+  return out.join('\r\n') + '\r\n';
+}
+// Tiny "stored" (uncompressed) ZIP writer — PNGs are already compressed.
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n=0;n<256;n++){ let c=n; for (let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+const crc32 = d => { let c = 0xFFFFFFFF; for (let i=0;i<d.length;i++) c = CRC_T[(c^d[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; };
+function makeZip(files){
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = f.data, crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true);
+    h.setUint16(10,0,true); h.setUint16(12,0x21,true); h.setUint32(14,crc,true); h.setUint32(18,data.length,true);
+    h.setUint32(22,data.length,true); h.setUint16(26,name.length,true); h.setUint16(28,0,true);
+    parts.push(h, name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true);
+    c.setUint16(10,0,true); c.setUint16(12,0,true); c.setUint16(14,0x21,true); c.setUint32(16,crc,true);
+    c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,name.length,true);
+    c.setUint32(42,offset,true);
+    central.push(c, name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((n,p) => n + p.byteLength, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true);
+  e.setUint32(12,cdSize,true); e.setUint32(16,offset,true);
+  return new Blob([...parts, ...central, e], { type: 'application/zip' });
+}
+function silReadme(L, pages){
+  const paper = $('#paper').value === 'a4' ? 'A4' : 'Letter';
+  const w = L.W.toFixed(2).replace(/\.?0+$/,''), h = L.H.toFixed(2).replace(/\.?0+$/,'');
+  return `FLIPBOOK CUT KIT — Silhouette Studio (works in the free Basic Edition)
+
+For each sheet there are two files:
+  sheet-NN.png      the picture to print (exactly ${w} x ${h} in)
+  sheet-NN-cut.dxf  the cut lines (blue = cut; the red page frame is only for lining up)
+
+ONE-TIME SETUP
+  Page Setup: Media Size ${paper}, Portrait. Registration Marks ON (Type 1 for Cameo/Portrait), default positions.
+  Optional: Edit > Preferences > Import > DXF: "As-is".
+
+FOR EACH SHEET (${pages} in this kit)
+  1. File > Merge (or drag in) sheet-NN.png.
+     In the Transform panel set W ${w} in, H ${h} in, then X 0, Y 0 so it fills the page exactly.
+  2. File > Merge sheet-NN-cut.dxf. With it selected, set W ${w} in (keep proportions), then X 0, Y 0.
+     The red frame should sit on the page edge and the blue lines on the slip edges.
+  3. Check nothing sits in the hatched areas around the registration marks.
+  4. Print from Silhouette Studio (File > Print), so the registration marks print with the picture.
+     Print at 100% — no scaling.
+  5. Put the sheet on the mat in the same orientation as on screen.
+  6. Send panel: cut by line color — Blue = Cut, Red = no cut. The picture gets no cut line.
+     Material: your cardstock setting. Send — the machine reads the marks, then cuts.
+
+TIPS
+  Print & cut can be off by about 1/16 inch, which is why the slips have no printed border.
+  If the DXF opens tiny or huge, just set its width to ${w} in as in step 2 — the red frame makes that exact.
+  Delete the PNG and DXF before merging the next sheet (or use a new page).
+`;
+}
+$('#silBtn').onclick = async () => {
+  const btn = $('#silBtn'); btn.disabled = true; const prog = $('#pdfProg');
+  try {
+    const L = getLayout(), slips = getSlips(), pages = Math.ceil(slips.length / L.per);
+    const files = [], enc = new TextEncoder(), pad = n => String(n).padStart(2, '0');
+    for (let i = 0; i < pages; i++) {
+      setProgress(prog, i / pages);
+      const c = await renderPage(L, slips, i, 300, true);
+      const png = await new Promise(r => c.toBlob(r, 'image/png'));
+      files.push({ name: `sheet-${pad(i+1)}.png`, data: new Uint8Array(await png.arrayBuffer()) });
+      const count = Math.min(L.per, slips.length - i*L.per);
+      files.push({ name: `sheet-${pad(i+1)}-cut.dxf`, data: enc.encode(makeDXF(L, sheetCutSegments(L, count))) });
+      await new Promise(r => setTimeout(r));
+    }
+    files.push({ name: 'HOW-TO-CUT.txt', data: enc.encode(silReadme(L, pages)) });
+    setProgress(prog, 1);
+    const ok = await saveFile(baseName() + '-silhouette-kit.zip', makeZip(files));
+    if (ok) toast('Cut kit ready.');
+  } catch(e) { console.error(e); toast('Couldn’t build the cut kit: ' + e.message); }
   setProgress(prog, null); btn.disabled = false;
 };
 
