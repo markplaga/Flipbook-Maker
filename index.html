@@ -158,6 +158,15 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
       <input type="text" id="titleB" placeholder="defaults to the title below">
     </div>
 
+    <div id="alignBox" class="hidden">
+      <label>Line up the backs with the fronts</label>
+      <div class="row">
+        <div><label>Move back picture right (in)</label><input type="number" id="backDx" value="0" step="0.01" min="-0.5" max="0.5"></div>
+        <div><label>Move back picture down (in)</label><input type="number" id="backDy" value="0" step="0.01" min="-0.5" max="0.5"></div>
+      </div>
+      <p class="muted">Printers rarely feed the second side exactly where the first went. Print a test sheet, hold it to the light, and see which way the backs sit. If they land too far right, enter a negative number for “right” (use negative “down” for too low). Directions are as you see the back page. 0.01 in is about the width of a pencil line. Your numbers are remembered on this device.</p>
+    </div>
+
     <div class="row">
       <div><label>Paper</label>
         <select id="paper"><option value="letter">US Letter</option><option value="a4">A4</option></select></div>
@@ -440,8 +449,13 @@ function sidesHelp(){
     split: 'One animation, cut in half: the first half plays on the front, and when you turn the book over the second half carries on from the back.'
   }[state.sides];
   $('#backBox').classList.toggle('hidden', state.sides !== 'two');
+  $('#alignBox').classList.toggle('hidden', state.sides === 'one');
   refreshBackSlot();
 }
+// Back-side nudge, in inches, remembered between visits (printer feed error is a property of the printer).
+const backShift = () => ({ dx: clampNum($('#backDx').value, -0.5, 0.5, 0), dy: clampNum($('#backDy').value, -0.5, 0.5, 0) });
+try { const sv = JSON.parse(localStorage.getItem('flipbookBackShift') || 'null'); if (sv) { $('#backDx').value = sv.dx || 0; $('#backDy').value = sv.dy || 0; } } catch(e){}
+['#backDx','#backDy'].forEach(s => $(s).addEventListener('input', () => { try { localStorage.setItem('flipbookBackShift', JSON.stringify(backShift())); } catch(e){} }));
 function sideHelp(){
   $('#sideHelp').textContent = state.side==='right'
     ? 'Binding strip on the left. Hold in your left hand, flip with your right thumb — the usual choice for right-handers.'
@@ -1012,7 +1026,8 @@ async function renderPage(L, slips, pageIdx, dpi, full, side){
     let col = k % L.cols; const row = Math.floor(k / L.cols);
     if (back) col = L.cols - 1 - col;
     const f = back ? s.back : s;
-    const x = (L.offX + col*L.sw)*dpi, y = (L.offY + row*L.sh)*dpi;
+    const sh = back ? backShift() : { dx:0, dy:0 };
+    const x = (L.offX + col*L.sw + sh.dx)*dpi, y = (L.offY + row*L.sh + sh.dy)*dpi;
     let img = null, bmp = null;
     if (f.kind === 'frame') {
       const fr = framesFor(f)[f.fi];
@@ -1039,7 +1054,7 @@ function sheetSpecs(L, slips){
 /* ---------- preview ---------- */
 let renderTimer = null, renderToken = 0;
 function schedule(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 120); }
-['#paper','#slipW','#slipH','#bindW','#loops','#holdStart','#holdEnd','#reverse','#cover','#back','#title','#titleB','#gray','#contrast','#bright','#cutLines','#tint']
+['#paper','#slipW','#slipH','#bindW','#loops','#holdStart','#holdEnd','#reverse','#cover','#back','#title','#titleB','#backDx','#backDy','#gray','#contrast','#bright','#cutLines','#tint']
   .forEach(s => { $(s).addEventListener('input', schedule); $(s).addEventListener('change', schedule); });
 ['#slipW','#slipH','#bindW'].forEach(s => $(s).addEventListener('input', () => { $('#slipPreset').value = 'custom'; }));
 
