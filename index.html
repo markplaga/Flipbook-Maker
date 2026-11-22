@@ -137,6 +137,27 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
     </div>
     <p class="muted" id="sideHelp"></p>
 
+    <label>Printing</label>
+    <div class="seg" id="sidesSeg">
+      <button data-v="one" class="on">One side</button>
+      <button data-v="two">Two animations</button>
+      <button data-v="split">Split across both sides</button>
+    </div>
+    <p class="muted" id="sidesHelp"></p>
+    <div id="backBox" class="hidden">
+      <div class="note">
+        <div id="backInfo">No back-side animation yet.</div>
+        <div class="thumbs" id="backThumbs"></div>
+        <div class="row" style="flex-wrap:wrap;margin-top:6px">
+          <button class="btn sec" id="setBack">Use the loaded animation as the back</button>
+          <button class="btn sec" id="swapSides">Swap front and back</button>
+          <button class="btn sec" id="clearBack">Clear back</button>
+        </div>
+      </div>
+      <label>Back-side title (optional)</label>
+      <input type="text" id="titleB" placeholder="defaults to the title below">
+    </div>
+
     <div class="row">
       <div><label>Paper</label>
         <select id="paper"><option value="letter">US Letter</option><option value="a4">A4</option></select></div>
@@ -199,6 +220,10 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
   <div class="card">
     <h2>Flip preview</h2>
     <div class="flipwrap">
+      <div class="seg hidden" id="flipSideSeg">
+        <button data-v="front" class="on">Front</button>
+        <button data-v="back">Back</button>
+      </div>
       <canvas id="flipCanvas" width="420" height="240"></canvas>
       <div class="row" style="width:100%;max-width:420px">
         <button class="btn sec" id="playBtn">Play</button>
@@ -333,6 +358,13 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
       <li><b>Bind the strip side</b> (the shaded edge with the numbers): a strong binder clip is easiest; or glue each slip to the one below along the strip, or wrap the strip tightly in tape. For a sturdier book, glue the back card onto a piece of thick card.</li>
       <li><b>Flip:</b> hold the binding in one hand, bend the free edge with your thumb, and let the slips slide off one at a time from the front. With the picture on the right, hold in your left hand and flip with your right thumb (and the reverse for picture left).</li>
     </ol>
+    <h3>Two-sided books</h3>
+    <ol class="steps">
+      <li><b>Print double-sided.</b> The PDF alternates front and back pages. Choose double-sided in the print dialog and flip on the <b>long edge</b> for portrait sheets or the <b>short edge</b> for landscape (each sheet’s footer tells you). Print one test sheet and hold it to the light: every back picture should sit behind its front slip.</li>
+      <li><b>Cut and stack</b> as above. Thin paper shows the other side through it, so use heavy paper or light cardstock for double-sided books.</li>
+      <li><b>Flip the front</b> as usual. To watch the back, turn the whole book over like turning a magazine around, so the binding is now in your other hand, and flip again. The back counts up 1, 2, 3… from that side.</li>
+      <li><b>Split animations:</b> the story carries on across the turn. After the last front slip, flip the book over and the next number picks up from the back.</li>
+    </ol>
     <h3>Cutting on a Silhouette</h3>
     <ol class="steps">
       <li>On the Make tab, tick <b>Cut on a Silhouette machine</b>, then <b>Download Silhouette cut kit</b>. The zip has a picture and a DXF cut file for each sheet, plus these steps.</li>
@@ -393,14 +425,23 @@ $$('nav button').forEach(b => b.onclick = () => {
 });
 
 /* ---------- segmented controls ---------- */
-const state = { side:'right', fit:'contain' };
+const state = { side:'right', fit:'contain', sides:'one', flipSide:'front' };
 function seg(id, key, cb){
   $$(id+' button').forEach(b => b.onclick = () => {
     $$(id+' button').forEach(x=>x.classList.toggle('on', x===b));
     state[key] = b.dataset.v; cb && cb(); schedule();
   });
 }
-seg('#sideSeg','side', sideHelp); seg('#fitSeg','fit');
+seg('#sideSeg','side', sideHelp); seg('#fitSeg','fit'); seg('#sidesSeg','sides', sidesHelp); seg('#flipSideSeg','flipSide');
+function sidesHelp(){
+  $('#sidesHelp').textContent = {
+    one: '',
+    two: 'Each slip carries two animations: one on the front and one on the back. Load the animation for the back first and click “Use the loaded animation as the back”, then load the one for the front. Flip the book normally to play the front; turn it over to play the back.',
+    split: 'One animation, cut in half: the first half plays on the front, and when you turn the book over the second half carries on from the back.'
+  }[state.sides];
+  $('#backBox').classList.toggle('hidden', state.sides !== 'two');
+  refreshBackSlot();
+}
 function sideHelp(){
   $('#sideHelp').textContent = state.side==='right'
     ? 'Binding strip on the left. Hold in your left hand, flip with your right thumb — the usual choice for right-handers.'
@@ -414,6 +455,33 @@ let raw = [];
 let rawKind = null; // 'video' | 'gif' | 'images' | 'code'
 let videoFile = null;
 const FULL_MAX = 1100, THUMB_MAX = 360;
+
+// Back-side animation ("Two animations" mode). `raw` is always the front.
+let rawB = [];
+let rawBInfo = '';
+const framesFor = f => f.src === 'B' ? rawB : raw;
+function refreshBackSlot(){
+  $('#backInfo').textContent = rawB.length ? rawBInfo : 'No back-side animation yet.';
+  const th = $('#backThumbs'); th.innerHTML = '';
+  const step = Math.max(1, Math.ceil(rawB.length / 30));
+  for (let i=0;i<rawB.length;i+=step){ const c = makeCanvas(rawB[i].thumb.width, rawB[i].thumb.height); c.getContext('2d').drawImage(rawB[i].thumb,0,0); th.appendChild(c); }
+  $('#swapSides').disabled = !rawB.length && !raw.length;
+  $('#clearBack').disabled = !rawB.length;
+}
+$('#setBack').onclick = () => {
+  if (!raw.length) { toast('Load an animation first, then use it as the back.'); return; }
+  rawB = raw.slice(); rawBInfo = $('#srcInfo').textContent;
+  refreshBackSlot(); schedule(); toast('Saved as the back side. Now load the animation for the front.');
+};
+$('#clearBack').onclick = () => { rawB = []; rawBInfo = ''; refreshBackSlot(); schedule(); };
+$('#swapSides').onclick = () => {
+  const frontInfo = $('#srcInfo').textContent;
+  const tmp = raw; raw = rawB; rawB = tmp;
+  const nextFront = rawBInfo; rawBInfo = frontInfo; rawKind = null;
+  if (raw.length) afterLoad(nextFront); else { $('#srcInfo').textContent = 'No animation loaded yet.'; $('#thumbs').innerHTML = ''; schedule(); }
+  refreshBackSlot();
+};
+sidesHelp();
 
 function makeCanvas(w,h){ const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w)); c.height=Math.max(1,Math.round(h)); return c; }
 function canvasToBlob(c, q=0.92){ return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', q)); }
@@ -817,19 +885,41 @@ function getLayout(){
   return { W, H, orient: land ? 'landscape' : 'portrait', cols: g.cols, rows: g.rows, per: g.cols*g.rows,
     sw, sh, bw, offX: (W - g.cols*sw)/2, offY: (H - g.rows*sh)/2 };
 }
-function getSlips(){
-  if (!raw.length) return [];
-  let order = raw.map((_,i)=>i);
+// Frame order for one animation after reverse / repeat loops / held first and last frames.
+function buildSeq(count){
+  if (!count) return [];
+  let order = Array.from({length: count}, (_,i)=>i);
   if ($('#reverse').checked) order.reverse();
   const loops = clampNum($('#loops').value,1,10,1)|0;
   let seq = []; for (let l=0;l<loops;l++) seq = seq.concat(order);
   const hs = clampNum($('#holdStart').value,0,20,0)|0, he = clampNum($('#holdEnd').value,0,20,0)|0;
-  seq = Array(hs).fill(seq[0]).concat(seq, Array(he).fill(seq[seq.length-1]));
-  const slips = [];
-  if ($('#cover').checked) slips.push({ kind:'cover' });
-  seq.forEach((fi, i) => slips.push({ kind:'frame', fi, n: i+1 }));
-  if ($('#back').checked) slips.push({ kind:'back' });
-  return slips;
+  return Array(hs).fill(seq[0]).concat(seq, Array(he).fill(seq[seq.length-1]));
+}
+const isDuplex = () => state.sides !== 'one';
+// Which paper edge to flip on so the backs line up (the sheet is mirrored left-to-right).
+const flipEdge = L => L.orient === 'portrait' ? 'long' : 'short';
+
+// Returns the front slips. In two-sided modes each slip also has `.back`, the face printed behind it.
+// Viewed from the back the stack is turned over, so the back faces run in reverse slip order.
+function getSlips(){
+  if (!raw.length) return [];
+  const mode = state.sides;
+  let A = buildSeq(raw.length).map(fi => ({ src:'A', fi })), B = null, startB = 0;
+  if (mode === 'split') { const h = Math.ceil(A.length/2); B = A.slice(h); A = A.slice(0, h); startB = h; }
+  else if (mode === 'two') B = buildSeq(rawB.length).map(fi => ({ src:'B', fi }));
+  const m = Math.max(A.length, B ? B.length : 0);
+  const pad = s => { while (s.length && s.length < m) s.push(s[s.length-1]); };   // shorter side holds its last frame
+  pad(A); if (B) pad(B);
+
+  const titleA = $('#title').value.trim();
+  const titleB = mode === 'two' ? ($('#titleB').value.trim() || titleA) : titleA;
+  const face = (e, n, title) => e ? { kind:'frame', src:e.src, fi:e.fi, n, title } : { kind:'blank', title };
+  const F = [], V = [];
+  if ($('#cover').checked) { F.push({ kind:'cover', title:titleA }); V.push({ kind:'cover', title:titleB }); }
+  for (let i=0;i<m;i++) { F.push(face(A[i], i+1, titleA)); if (B) V.push(face(B[i], startB+i+1, titleB)); else if (mode !== 'one') V.push(face(null, 0, titleB)); }
+  if ($('#back').checked) { F.push({ kind:'back', title:titleA }); V.push({ kind:'back', title:titleB }); }
+  if (mode !== 'one') { const M = F.length; F.forEach((s, j) => { s.back = V[M-1-j]; }); }
+  return F;
 }
 
 /* ---------- drawing ---------- */
@@ -849,9 +939,10 @@ function adjustRegion(ctx, x, y, w, h){
   ctx.putImageData(id, x, y);
 }
 
-function drawSlip(ctx, L, s, x, y, dpi, img){
+// `mirror` is true for the back face: turned over, the binding strip is on the opposite edge.
+function drawSlip(ctx, L, s, x, y, dpi, img, mirror){
   const sw = L.sw*dpi, sh = L.sh*dpi, bw = L.bw*dpi;
-  const imgLeft = state.side === 'left';
+  const imgLeft = (state.side === 'left') !== !!mirror;
   const bx = imgLeft ? x + sw - bw : x;           // binding strip x
   const ix = imgLeft ? x : x + bw;                // image area x
   const iw = sw - bw, ih = sh;
@@ -862,9 +953,9 @@ function drawSlip(ctx, L, s, x, y, dpi, img){
   ctx.save(); ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = Math.max(1, dpi/160); ctx.setLineDash([dpi*0.04, dpi*0.04]);
   const gx = imgLeft ? bx : bx + bw; ctx.beginPath(); ctx.moveTo(gx, y + dpi*0.08); ctx.lineTo(gx, y + sh - dpi*0.08); ctx.stroke(); ctx.restore();
 
-  const title = $('#title').value.trim();
+  const title = (s.title != null ? s.title : $('#title').value).trim();
   // label in strip
-  let label = s.kind === 'cover' ? 'COVER' : s.kind === 'back' ? 'BACK' : String(s.n);
+  let label = s.kind === 'cover' ? 'COVER' : s.kind === 'back' ? 'BACK' : s.kind === 'blank' ? '' : String(s.n);
   ctx.save();
   ctx.translate(bx + bw/2, y + sh/2); ctx.rotate(imgLeft ? Math.PI/2 : -Math.PI/2);
   ctx.fillStyle = '#222'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -901,7 +992,7 @@ function drawSlip(ctx, L, s, x, y, dpi, img){
     ctx.restore();
   } else if (s.kind === 'back') {
     ctx.save(); ctx.fillStyle = '#bbb'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.font = `italic ${ih*0.07}px Georgia, serif`; ctx.fillText('glue onto stiff card for a firm back', ix+iw/2, y+ih/2); ctx.restore();
+    ctx.font = `italic ${ih*0.07}px Georgia, serif`; ctx.fillText(isDuplex() ? 'the end' : 'glue onto stiff card for a firm back', ix+iw/2, y+ih/2); ctx.restore();
   }
   if ($('#cutLines').checked) {
     ctx.save(); ctx.strokeStyle = '#9a9a9a'; ctx.lineWidth = Math.max(1, dpi/200);
@@ -909,34 +1000,46 @@ function drawSlip(ctx, L, s, x, y, dpi, img){
   }
 }
 
-async function renderPage(L, slips, pageIdx, dpi, full){
+// side 'back' draws the reverse of the sheet: each slip's back face sits in the mirrored column so it
+// lands behind its front slip when the paper is turned over along the vertical axis.
+async function renderPage(L, slips, pageIdx, dpi, full, side){
+  const back = side === 'back';
   const c = makeCanvas(L.W*dpi, L.H*dpi), ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff'; ctx.fillRect(0,0,c.width,c.height);
   const start = pageIdx*L.per;
   for (let k=0;k<L.per;k++){
     const s = slips[start+k]; if (!s) break;
-    const col = k % L.cols, row = Math.floor(k / L.cols);
+    let col = k % L.cols; const row = Math.floor(k / L.cols);
+    if (back) col = L.cols - 1 - col;
+    const f = back ? s.back : s;
     const x = (L.offX + col*L.sw)*dpi, y = (L.offY + row*L.sh)*dpi;
     let img = null, bmp = null;
-    if (s.kind === 'frame') {
-      const fr = raw[s.fi];
+    if (f.kind === 'frame') {
+      const fr = framesFor(f)[f.fi];
       if (full) { bmp = await createImageBitmap(fr.blob); img = bmp; } else img = fr.thumb;
     }
-    drawSlip(ctx, L, s, x, y, dpi, img);
+    drawSlip(ctx, L, f, x, y, dpi, img, back);
     if (bmp && bmp.close) bmp.close();
   }
   // footer (left off in Silhouette mode so nothing prints near the registration marks)
   if ($('#silMode').checked) return c;
   ctx.fillStyle = '#aaa'; ctx.font = `${0.11*dpi}px -apple-system, sans-serif`; ctx.textAlign = 'center';
   const total = Math.ceil(slips.length / L.per);
-  ctx.fillText(`Sheet ${pageIdx+1} of ${total}  ·  print at 100%  ·  cut on gray lines`, c.width/2, c.height - 0.12*dpi);
+  const duplex = isDuplex() ? `  ·  ${back ? 'BACK' : 'FRONT'}, print double-sided, flip on ${flipEdge(L)} edge` : '';
+  ctx.fillText(`Sheet ${pageIdx+1} of ${total}${duplex}  ·  print at 100%  ·  cut on gray lines`, c.width/2, c.height - 0.12*dpi);
   return c;
+}
+// The pages to output, in print order: front then back of each sheet when double-sided.
+function sheetSpecs(L, slips){
+  const pages = Math.ceil(slips.length / L.per), out = [];
+  for (let i=0;i<pages;i++){ out.push({ i, side:'front' }); if (isDuplex()) out.push({ i, side:'back' }); }
+  return out;
 }
 
 /* ---------- preview ---------- */
 let renderTimer = null, renderToken = 0;
 function schedule(){ clearTimeout(renderTimer); renderTimer = setTimeout(renderPreview, 120); }
-['#paper','#slipW','#slipH','#bindW','#loops','#holdStart','#holdEnd','#reverse','#cover','#back','#title','#gray','#contrast','#bright','#cutLines','#tint']
+['#paper','#slipW','#slipH','#bindW','#loops','#holdStart','#holdEnd','#reverse','#cover','#back','#title','#titleB','#gray','#contrast','#bright','#cutLines','#tint']
   .forEach(s => { $(s).addEventListener('input', schedule); $(s).addEventListener('change', schedule); });
 ['#slipW','#slipH','#bindW'].forEach(s => $(s).addEventListener('input', () => { $('#slipPreset').value = 'custom'; }));
 
@@ -945,24 +1048,32 @@ async function renderPreview(){
   const L = getLayout(), slips = getSlips();
   const pages = Math.ceil(slips.length / L.per);
   const frames = slips.filter(s=>s.kind==='frame').length;
+  const backFrames = slips.filter(s=>s.back && s.back.kind==='frame').length;
+  const duplex = isDuplex();
+  $('#flipSideSeg').classList.toggle('hidden', !duplex);
   const st = $('#stats'); st.innerHTML = '';
   const pill = (t, warn) => { const e = document.createElement('span'); e.className = 'pill' + (warn?' warn':''); e.textContent = t; st.appendChild(e); };
   if (!raw.length) { pill(`${L.per} slips per sheet (${L.cols}×${L.rows}, ${L.orient})`); $('#pdfBtn').disabled = $('#pngBtn').disabled = $('#silBtn').disabled = true; drawFlip(0); return; }
-  pill(`${frames} frame slips`); pill(`${L.per} per sheet (${L.cols}×${L.rows})`); pill(`${pages} sheet${pages>1?'s':''}`);
-  pill(`≈ ${(frames/12).toFixed(1)} s at a brisk flip`);
+  pill(duplex ? `${frames} front + ${backFrames} back frames` : `${frames} frame slips`); pill(`${L.per} per sheet (${L.cols}×${L.rows})`);
+  pill(duplex ? `${pages} sheet${pages>1?'s':''}, ${pages*2} pages double-sided` : `${pages} sheet${pages>1?'s':''}`);
+  pill(`≈ ${(frames/12).toFixed(1)} s${duplex ? ' per side' : ''} at a brisk flip`);
+  if (duplex) pill(`Print double-sided, flip on ${flipEdge(L)} edge`);
+  if (state.sides === 'two' && !rawB.length) pill('No back-side animation yet — backs will be blank', true);
+  else if (state.sides === 'two' && buildSeq(raw.length).length !== buildSeq(rawB.length).length) pill('Front and back differ in length — the shorter one holds its last frame', true);
   if (frames > 150) pill('Very thick book — hard to bind', true);
   else if (frames < 12) pill('Short — under a second of motion', true);
   const empty = pages*L.per - slips.length; if (empty) pill(`${empty} empty spot${empty>1?'s':''} on last sheet`);
   $('#pdfBtn').disabled = $('#pngBtn').disabled = $('#silBtn').disabled = false;
   const box = $('#pages'); box.innerHTML = '';
-  const show = Math.min(pages, 6);
-  for (let i=0;i<show;i++){
+  const specs = sheetSpecs(L, slips), show = Math.min(specs.length, 6);
+  for (let k=0;k<show;k++){
     if (token !== renderToken) return;
-    const c = await renderPage(L, slips, i, 60, false);
+    const { i, side } = specs[k];
+    const c = await renderPage(L, slips, i, 60, false, side);
     box.appendChild(c);
-    const lb = document.createElement('div'); lb.className='pageLabel'; lb.textContent = `Sheet ${i+1}`; box.appendChild(lb);
+    const lb = document.createElement('div'); lb.className='pageLabel'; lb.textContent = duplex ? `Sheet ${i+1} · ${side}` : `Sheet ${i+1}`; box.appendChild(lb);
   }
-  if (pages > show) { const p = document.createElement('p'); p.className='muted'; p.textContent = `+ ${pages-show} more sheet${pages-show>1?'s':''} in the PDF.`; box.appendChild(p); }
+  if (specs.length > show) { const left = specs.length - show; const p = document.createElement('p'); p.className='muted'; p.textContent = `+ ${left} more page${left>1?'s':''} in the PDF.`; box.appendChild(p); }
   flipIdx = 0; drawFlip(0);
 }
 
@@ -973,10 +1084,13 @@ function drawFlip(i){
   const dpi = Math.min(420 / L.sw, 260 / L.sh);
   c.width = Math.round(L.sw*dpi); c.height = Math.round(L.sh*dpi);
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  const slips = getSlips().filter(s=>s.kind==='frame');
-  if (!slips.length) { ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#aaa'; ctx.textAlign='center'; ctx.font='15px sans-serif'; ctx.fillText('Your animation plays here', c.width/2, c.height/2); return; }
+  const all = getSlips();
+  const back = isDuplex() && state.flipSide === 'back';
+  // From the back the stack is turned over, so the faces are seen in reverse slip order.
+  const slips = (back ? all.map(s => s.back).reverse() : all).filter(s => s && s.kind==='frame');
+  if (!slips.length) { ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#aaa'; ctx.textAlign='center'; ctx.font='15px sans-serif'; ctx.fillText(back ? 'The back side is empty' : 'Your animation plays here', c.width/2, c.height/2); return; }
   const s = slips[i % slips.length];
-  drawSlip(ctx, L, s, 0, 0, dpi, raw[s.fi].thumb);
+  drawSlip(ctx, L, s, 0, 0, dpi, framesFor(s)[s.fi].thumb, back);
 }
 function loop(t){
   if (!playing) return;
@@ -993,11 +1107,12 @@ $('#pdfBtn').onclick = async () => {
   if (!window.jspdf) { toast('PDF maker didn’t load — use “Download page images” instead.'); return; }
   const btn = $('#pdfBtn'); btn.disabled = true; const prog = $('#pdfProg');
   try {
-    const L = getLayout(), slips = getSlips(), pages = Math.ceil(slips.length / L.per);
+    const L = getLayout(), slips = getSlips(), specs = sheetSpecs(L, slips), pages = specs.length;
     const doc = new window.jspdf.jsPDF({ unit:'in', format: $('#paper').value, orientation: L.orient });
-    for (let i=0;i<pages;i++){
-      setProgress(prog, i/pages);
-      const c = await renderPage(L, slips, i, 220, true);
+    for (let p=0;p<pages;p++){
+      const i = p;   // page index in the PDF
+      setProgress(prog, p/pages);
+      const c = await renderPage(L, slips, specs[p].i, 220, true, specs[p].side);
       if (i) doc.addPage($('#paper').value, L.orient);
       doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, L.W, L.H, undefined, 'FAST');
       await new Promise(r=>setTimeout(r));
@@ -1012,12 +1127,13 @@ $('#pdfBtn').onclick = async () => {
 $('#pngBtn').onclick = async () => {
   const btn = $('#pngBtn'); btn.disabled = true; const prog = $('#pdfProg');
   try {
-    const L = getLayout(), slips = getSlips(), pages = Math.ceil(slips.length / L.per);
-    for (let i=0;i<pages;i++){
-      setProgress(prog, i/pages);
-      const c = await renderPage(L, slips, i, 220, true);
+    const L = getLayout(), slips = getSlips(), specs = sheetSpecs(L, slips);
+    for (let p=0;p<specs.length;p++){
+      const { i, side } = specs[p];
+      setProgress(prog, p/specs.length);
+      const c = await renderPage(L, slips, i, 220, true, side);
       const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-      const ok = await saveFile(`${baseName()}-sheet-${i+1}.png`, blob);
+      const ok = await saveFile(`${baseName()}-sheet-${i+1}${isDuplex() ? '-' + side : ''}.png`, blob);
       if (!ok) break;
     }
   } catch(e) { toast('Couldn’t save images: ' + e.message); }
@@ -1116,7 +1232,13 @@ FOR EACH SHEET (${pages} in this kit)
   6. Send panel: cut by line color — Blue = Cut, Red = no cut. The picture gets no cut line.
      Material: your cardstock setting. Send — the machine reads the marks, then cuts.
 
-TIPS
+${isDuplex() ? `DOUBLE-SIDED BOOK
+  Each sheet also has sheet-NN-back.png, the reverse side. It is already mirrored so every back lines up behind its front slip.
+  Print the back first, from any program at 100% (no scaling), turning the paper over along its ${flipEdge(L)} edge.
+  Then put that sheet back in the printer and print the front from Silhouette Studio so the registration marks land on the front.
+  Use scrap paper first: if the back drifts, the picture will not sit behind its slip, and the cut follows the front.
+
+` : ''}TIPS
   Print & cut can be off by about 1/16 inch, which is why the slips have no printed border.
   If the DXF opens tiny or huge, just set its width to ${w} in as in step 2 — the red frame makes that exact.
   Delete the PNG and DXF before merging the next sheet (or use a new page).
@@ -1134,6 +1256,11 @@ $('#silBtn').onclick = async () => {
       files.push({ name: `sheet-${pad(i+1)}.png`, data: new Uint8Array(await png.arrayBuffer()) });
       const count = Math.min(L.per, slips.length - i*L.per);
       files.push({ name: `sheet-${pad(i+1)}-cut.dxf`, data: enc.encode(makeDXF(L, sheetCutSegments(L, count))) });
+      if (isDuplex()) {
+        const cb = await renderPage(L, slips, i, 300, true, 'back');
+        const pngB = await new Promise(r => cb.toBlob(r, 'image/png'));
+        files.push({ name: `sheet-${pad(i+1)}-back.png`, data: new Uint8Array(await pngB.arrayBuffer()) });
+      }
       await new Promise(r => setTimeout(r));
     }
     files.push({ name: 'HOW-TO-CUT.txt', data: enc.encode(silReadme(L, pages)) });

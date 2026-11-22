@@ -9,6 +9,7 @@ Everything runs in the browser in a single file (`index.html`) — no build step
 - **Input:** GIF, any video (MP4, MOV, WebM, AVI, MKV, WMV, FLV…), animated WebP/PNG (in browsers with `ImageDecoder`), or several images at once (ordered by filename).
 - **Layout:** numbered slips laid out edge to edge on US Letter or A4, with the picture on the **left or right** and a shaded binding strip with the frame number on the opposite side.
 - **Slip sizes:** Pocket 3×2 in, Card 3½×2 in, Wide 4×2½ in, Index 5×3 in, or custom.
+- **Two-sided books:** put a second animation on the back of every slip (**Two animations**), or cut one animation in half so the second half carries on from the back when you turn the book over (**Split across both sides**). The PDF alternates front and back pages, with each back mirrored so it prints behind its front slip. Print double-sided, flipping on the long edge for portrait sheets or the short edge for landscape. The flip preview has a Front/Back toggle.
 - **Sequence options:** video trim and frames per second, GIF resampling, repeat loops, held first/last frames, reverse, title cover slip, blank back card.
 - **Print look:** black & white, contrast, brightness, cut lines.
 - **Output:** a print-ready PDF (via jsPDF) or one PNG per sheet. Print at 100% / "Actual size".
